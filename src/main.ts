@@ -18,10 +18,17 @@ declare global {
    Paste your free Firebase keys (Profile → Setup) for online PvP.
    The SAME keys from your other game hub work here.
    Demo mode (this device only) works without keys. */
-const CONFIG = { firebase: { apiKey: "", authDomain: "", databaseURL: "", projectId: "", appId: "" } };
+const CONFIG = {
+  firebase: { apiKey: "", authDomain: "", databaseURL: "", projectId: "", appId: "" },
+  livekit: { url: "", apiKey: "", apiSecret: "" }
+};
 try {
   const saved = JSON.parse(localStorage.getItem('bgh_fbcfg') || 'null');
   if (saved) CONFIG.firebase = saved;
+} catch (e) {}
+try {
+  const lks = JSON.parse(localStorage.getItem('bgh_lkcfg') || 'null');
+  if (lks) CONFIG.livekit = lks;
 } catch (e) {}
 
 const START_POINTS = 1000, DAILY_BONUS = 500;
@@ -165,6 +172,13 @@ if (soundBtn) {
   };
 }
 
+const micBtn = $('#micBtn');
+if (micBtn) {
+  micBtn.onclick = () => Voice.toggleMic();
+}
+
+window.addEventListener('beforeunload', () => { try { Friends.setOnline(false); } catch (e) {} });
+
 /* ================= backend / auth / points ================= */
 const Backend = {
   mode: 'demo',
@@ -202,9 +216,10 @@ const Auth = {
     const name = localStorage.getItem('bgh_name') || 'Player' + rnd(9000);
     if (Backend.mode === 'firebase') {
       Backend.onUser(u => {
-        this.user = u ? { uid: u.uid, username: u.displayName || name, email: u.email } : null;
-        if (u) this._pull();
+        this.user = u ? { uid: u.uid, username: u.displayName || name, email: u.email, photo: '' } : null;
+        if (u) { this._pull(); Friends.setOnline(true); }
         UI.refresh();
+        if (Backend.mode === 'firebase' && !this.user && UI.view !== 'auth') UI.go('auth');
       });
     } else {
       this.user = { uid: 'local', username: name };
@@ -220,6 +235,7 @@ const Auth = {
       Points.lastDaily = d.lastDaily || 0;
       if (d.username) this.user.username = d.username;
       else await Backend.db.ref('bgh_users/' + this.user.uid).update({ username: this.user.username });
+      if (d.photo) this.user.photo = d.photo;
       Points.checkDaily();
     } catch (e) {}
   },
@@ -230,19 +246,56 @@ const Auth = {
     Points.checkDaily();
   },
   async signup(email: string, pw: string, name: string) {
+    name = name.trim();
+    if (!/^[a-zA-Z0-9_]{3,16}$/.test(name)) throw new Error('Username: 3-16 letters, numbers or _');
+    if (pw.length < 6) throw new Error('Password must be 6+ characters');
+    const taken = await Backend.db.ref('bgh_usernames/' + name.toLowerCase()).get();
+    if (taken.exists()) throw new Error('Username taken');
     await Backend.auth.createUserWithEmailAndPassword(email, pw);
     await Backend.auth.currentUser.updateProfile({ displayName: name });
-    this.user = { uid: Backend.auth.currentUser.uid, username: name, email };
-    await Backend.db.ref('bgh_users/' + this.user.uid).set({ username: name, points: START_POINTS, wins: 0 });
+    this.user = { uid: Backend.auth.currentUser.uid, username: name, email, photo: '' };
+    const m: any = {};
+    m['bgh_users/' + this.user.uid] = { username: name, email: email.toLowerCase(), points: START_POINTS, wins: 0, created: Date.now(), lastDaily: 0 };
+    m['bgh_usernames/' + name.toLowerCase()] = this.user.uid;
+    await Backend.db.ref().update(m);
     Points.balance = START_POINTS;
   },
   async login(email: string, pw: string) {
     await Backend.auth.signInWithEmailAndPassword(email, pw);
   },
   async reset(email: string) {
-    await Backend.auth.sendPasswordResetEmail(email);
+    await Backend.auth.sendPasswordResetEmail(email.trim().toLowerCase());
+  },
+  async uploadPhoto(dataUrl: string) {
+    if (!this.user || Backend.mode !== 'firebase') return;
+    await Backend.db.ref('bgh_users/' + this.user.uid + '/photo').set(dataUrl);
+    this.user.photo = dataUrl;
+  },
+  async eraseAccount() {
+    if (!this.user || Backend.mode !== 'firebase') return;
+    const uid = this.user.uid;
+    const uname = (this.user.username || '').toLowerCase();
+    // Remove from friends' lists
+    try {
+      const fl = await Backend.db.ref('bgh_friends/' + uid).get();
+      const ids = Object.keys(fl.val() || {});
+      const m: any = {};
+      for (const fid of ids) m['bgh_friends/' + fid + '/' + uid] = null;
+      if (ids.length) await Backend.db.ref().update(m);
+    } catch (e) {}
+    const m: any = {};
+    m['bgh_users/' + uid] = null;
+    m['bgh_friends/' + uid] = null;
+    m['bgh_requests/' + uid] = null;
+    m['bgh_presence/' + uid] = null;
+    if (uname) m['bgh_usernames/' + uname] = null;
+    await Backend.db.ref().update(m);
+    try { await Backend.auth.currentUser.delete(); } catch (e) { throw e; }
+    await this.logout();
   },
   async logout() {
+    try { await Friends.setOnline(false); } catch (e) {}
+    Voice.leave();
     if (Backend.mode === 'firebase') {
       try { await Backend.auth.signOut(); } catch (e) {}
     }
@@ -398,6 +451,131 @@ const Net = {
     this.room = null;
     this._onUpdate = null;
     this._onInbox = null;
+    try { Voice.leave(); } catch (e) {}
+  }
+};
+
+/* ================= VOICE (LiveKit; needs keys pasted in Profile → Setup) ================= */
+const Voice = {
+  room: null as any,
+  micMuted: false,
+  active: false,
+  configured() {
+    const l = CONFIG.livekit;
+    return !!(l.url && l.apiKey && l.apiSecret);
+  },
+  async join(roomName: string) {
+    if (!this.configured()) { toast('Voice needs LiveKit keys (Profile → Setup).'); return false; }
+    if (this.active) return true;
+    try {
+      await loadScript('https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js');
+      const token = await this._token(roomName, Auth.user ? Auth.user.username : 'player');
+      const r = new (window as any).LivekitClient.Room();
+      await r.connect(CONFIG.livekit.url, token);
+      await r.localParticipant.setMicrophoneEnabled(true);
+      this.room = r; this.active = true; this.micMuted = false;
+      const mb = $('#micBtn');
+      if (mb) mb.classList.remove('hidden');
+      this._micIcon();
+      toast('Voice connected — talk to your opponent');
+      return true;
+    } catch (e) { console.warn(e); toast('Voice failed to connect'); return false; }
+  },
+  _micIcon() {
+    const mb = $('#micBtn');
+    if (!mb) return;
+    mb.textContent = this.micMuted ? '🚫' : '🎤';
+    mb.classList.toggle('off', this.micMuted);
+  },
+  toggleMic() {
+    if (!this.room) return;
+    this.micMuted = !this.micMuted;
+    this.room.localParticipant.setMicrophoneEnabled(!this.micMuted);
+    this._micIcon();
+  },
+  leave() {
+    if (this.room) { try { this.room.disconnect(); } catch (e) {} }
+    this.room = null; this.active = false;
+    const mb = $('#micBtn');
+    if (mb) mb.classList.add('hidden');
+  },
+  // Minimal JWT signer (HS256) via WebCrypto — secret stays in the user's own config.
+  async _token(roomName: string, identity: string) {
+    const header = { alg: 'HS256', typ: 'JWT' };
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+      iss: CONFIG.livekit.apiKey, sub: identity, iat: now, exp: now + 3600,
+      video: { room: roomName, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true }
+    };
+    const b64 = (o: any) => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const data = b64(header) + '.' + b64(payload);
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(CONFIG.livekit.apiSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+    const s = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return data + '.' + s;
+  }
+};
+
+/* ================= FRIENDS (needs Firebase) ================= */
+const Friends = {
+  needNet() {
+    if (Backend.mode !== 'firebase') { toast('Friends need Firebase (Profile → Setup).'); return false; }
+    return true;
+  },
+  async list() {
+    if (!this.needNet()) return [];
+    const s = await Backend.db.ref('bgh_friends/' + Auth.user.uid).get();
+    const ids = s.val() || {};
+    const out = [];
+    for (const fid of Object.keys(ids)) {
+      const p = await Backend.db.ref('bgh_users/' + fid).get();
+      const d = p.val() || {};
+      const pr = await Backend.db.ref('bgh_presence/' + fid).get();
+      out.push({ uid: fid, username: d.username || '?', photo: d.photo || '', online: !!(pr.val() && pr.val().online) });
+    }
+    return out;
+  },
+  async findUser(name: string) {
+    if (!this.needNet()) return null;
+    const s = await Backend.db.ref('bgh_usernames/' + name.trim().toLowerCase()).get();
+    if (!s.exists()) return null;
+    const p = await Backend.db.ref('bgh_users/' + s.val()).get();
+    return { uid: s.val(), ...((p.val() || {}) as any) };
+  },
+  async sendRequest(toUid: string) {
+    if (!this.needNet()) return;
+    await Backend.db.ref('bgh_requests/' + toUid + '/' + Auth.user.uid).set({ from: Auth.user.username, at: Date.now() });
+    toast('Friend request sent');
+  },
+  async requests() {
+    if (Backend.mode !== 'firebase') return [];
+    const s = await Backend.db.ref('bgh_requests/' + Auth.user.uid).get();
+    const r = s.val() || {};
+    return Object.keys(r).map(k => ({ uid: k, ...(r[k] as any) }));
+  },
+  async accept(uid: string) {
+    const m: any = {};
+    m['bgh_friends/' + Auth.user.uid + '/' + uid] = true;
+    m['bgh_friends/' + uid + '/' + Auth.user.uid] = true;
+    m['bgh_requests/' + Auth.user.uid + '/' + uid] = null;
+    await Backend.db.ref().update(m);
+    toast('Friend added');
+  },
+  async decline(uid: string) {
+    await Backend.db.ref('bgh_requests/' + Auth.user.uid + '/' + uid).remove();
+  },
+  async remove(uid: string) {
+    const m: any = {};
+    m['bgh_friends/' + Auth.user.uid + '/' + uid] = null;
+    m['bgh_friends/' + uid + '/' + Auth.user.uid] = null;
+    await Backend.db.ref().update(m);
+    toast('Friend removed');
+  },
+  async setOnline(on: boolean) {
+    if (Backend.mode !== 'firebase' || !Auth.user) return;
+    const r = Backend.db.ref('bgh_presence/' + Auth.user.uid);
+    if (on) { r.set({ online: true, at: Date.now() }); r.onDisconnect().set({ online: false, at: Date.now() }); }
+    else r.set({ online: false, at: Date.now() });
   }
 };
 
@@ -424,6 +602,8 @@ const UI = {
     if (this.view === 'profile') return this.profile(v);
     if (this.view === 'leaderboard') return this.leaderboard(v);
     if (this.view === 'chat') return this.chat(v);
+    if (this.view === 'friends') return this.friends(v);
+    if (this.view === 'auth') return this.authView(v);
     if (this.view === 'game') return this.gameMode(v);
     if (this.view === 'lobby') return this.lobby(v);
   },
@@ -665,17 +845,41 @@ const UI = {
   },
   profile(v: HTMLElement) {
     const fb = Backend.mode === 'firebase';
-    v.innerHTML = '<h2>👤 Profile</h2><div class="card"><h3>' + esc(Auth.user ? Auth.user.username : '…') + '</h3>'
-      + '<div class="muted">Points: <b>⭐ ' + Points.balance + '</b> · Wins: <b>' + Points.wins + '</b></div>'
-      + (fb ? '<div class="ok">Online connected ✓</div><button class="btn secondary" id="loBtn">Log out</button>'
-        : '<div class="card"><h3>🔑 Setup — free online PvP</h3><div class="muted">Same Firebase project as your other hub works here.<br>1. console.firebase.google.com → project → ⚙ → <i>Your apps</i> → Web → copy <b>firebaseConfig</b>.<br>2. Paste it below → Save → reload.</div><textarea id="fbCfg" rows="6" placeholder=\'{"apiKey":"…","authDomain":"…","databaseURL":"…","projectId":"…","appId":"…"}\'></textarea><button class="btn" id="saveFb">Save keys &amp; reload</button></div>'
-        + '<label>Display name (demo mode)</label><input id="nmIn" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="nmBtn">Save name</button>')
+    const loggedIn = fb && Auth.user && Auth.user.uid !== 'local';
+    const photo = Auth.user && Auth.user.photo
+      ? '<img src="' + Auth.user.photo + '" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">'
+      : '<div style="width:80px;height:80px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:36px">👤</div>';
+    v.innerHTML = '<h2>👤 Profile</h2><div class="card"><div class="row" style="align-items:center;gap:12px">' + photo
+      + '<div><h3 style="margin:0">' + esc(Auth.user ? Auth.user.username : '…') + '</h3>'
+      + '<div class="muted">' + esc(Auth.user && Auth.user.email ? Auth.user.email : '') + '</div>'
+      + '<div class="muted">Points: <b>⭐ ' + Points.balance + '</b> · Wins: <b>' + Points.wins + '</b></div></div></div>'
+      + (loggedIn
+        ? '<div class="row" style="gap:8px;margin-top:12px"><button class="btn secondary grow" id="photoBtn">📷 Upload photo</button>'
+        + '<input type="file" id="photoIn" accept="image/*" style="display:none"></div>'
+        + '<div class="ok">Online connected ✓</div><div class="muted">Voice chat: ' + (Voice.configured() ? '<span class="ok">LiveKit keys present ✓</span>' : '<span class="err">no keys — voice disabled</span>') + '</div>'
+        + '<button class="btn secondary" id="loBtn">Log out</button>'
+        + '<button class="btn secondary" id="eraseBtn" style="border-color:#e74c3c;color:#e74c3c;margin-top:8px">🗑 Erase my account</button>'
+        : '')
+      + (!fb ? '<div class="card"><h3>🔑 Setup — free online PvP</h3><div class="muted">Same Firebase project as your other hub works here.<br>1. console.firebase.google.com → project → ⚙ → <i>Your apps</i> → Web → copy <b>firebaseConfig</b>.<br>2. Paste it below → Save → reload.<br>3. For voice chat: <b>cloud.livekit.io</b> → free account → create project → paste URL + API key + secret below.</div><textarea id="fbCfg" rows="6" placeholder=\'{"apiKey":"…","authDomain":"…","databaseURL":"…","projectId":"…","appId":"…"}\'></textarea><button class="btn" id="saveFb">Save keys &amp; reload</button>'
+        + '<label style="margin-top:12px">LiveKit (voice chat) — optional</label><textarea id="lkCfg" rows="3" placeholder=\'{"url":"wss://…","apiKey":"…","apiSecret":"…"}\'></textarea><button class="btn secondary" id="saveLk">Save voice keys &amp; reload</button></div>'
+        + '<label>Display name (demo mode)</label><input id="nmIn" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="nmBtn">Save name</button>'
+        : '')
       + '</div>';
     const s = $('#saveFb');
     if (s) s.onclick = () => {
       try {
-        const j = JSON.parse($('#fbCfg').value);
+        const j = JSON.parse(($('#fbCfg') as any).value);
         localStorage.setItem('bgh_fbcfg', JSON.stringify(j));
+        location.reload();
+      } catch (e) {
+        toast('That is not valid JSON');
+      }
+    };
+    const lk = $('#saveLk');
+    if (lk) lk.onclick = () => {
+      try {
+        const j = JSON.parse(($('#lkCfg') as any).value);
+        localStorage.setItem('bgh_lkcfg', JSON.stringify(j));
         location.reload();
       } catch (e) {
         toast('That is not valid JSON');
@@ -683,11 +887,58 @@ const UI = {
     };
     const nb = $('#nmBtn');
     if (nb) nb.onclick = () => {
-      localStorage.setItem('bgh_name', $('#nmIn').value || 'Player');
+      localStorage.setItem('bgh_name', ($('#nmIn') as any).value || 'Player');
       location.reload();
     };
     const lo = $('#loBtn');
     if (lo) lo.onclick = () => Auth.logout();
+    const pb = $('#photoBtn');
+    const pi = $('#photoIn') as any;
+    if (pb && pi) {
+      pb.onclick = () => pi.click();
+      pi.onchange = () => {
+        const file = pi.files && pi.files[0];
+        if (!file) return;
+        const rd = new FileReader();
+        rd.onload = () => {
+          const img = new Image();
+          img.onload = async () => {
+            const cv = document.createElement('canvas');
+            const sz = 256;
+            const sc = Math.min(1, sz / Math.max(img.width, img.height));
+            cv.width = Math.round(img.width * sc);
+            cv.height = Math.round(img.height * sc);
+            cv.getContext('2d')!.drawImage(img, 0, 0, cv.width, cv.height);
+            const dataUrl = cv.toDataURL('image/jpeg', 0.8);
+            try {
+              await Auth.uploadPhoto(dataUrl);
+              toast('Photo updated');
+              UI.go('profile');
+            } catch (e) { toast('Upload failed'); }
+          };
+          img.src = rd.result as string;
+        };
+        rd.readAsDataURL(file);
+      };
+    }
+    const eb = $('#eraseBtn');
+    if (eb) eb.onclick = () => {
+      const m = modal('<div class="center" style="padding:12px 6px">'
+        + '<div style="font-size:46px;margin-bottom:10px">⚠️</div>'
+        + '<h3>Permanently erase your account?</h3>'
+        + '<div class="muted" style="margin-bottom:18px">This deletes your profile, photo, points, friends and login. This cannot be undone.</div>'
+        + '<div class="row" style="gap:10px"><button class="btn secondary grow" id="eNo">Cancel</button>'
+        + '<button class="btn danger grow" id="eYes">Erase everything</button></div></div>');
+      (m.querySelector('#eNo') as HTMLElement).onclick = () => closeModal();
+      (m.querySelector('#eYes') as HTMLElement).onclick = async () => {
+        try {
+          await Auth.eraseAccount();
+        } catch (e: any) {
+          closeModal();
+          toast(esc(e.message || 'Erase failed — try logging out and back in first'));
+        }
+      };
+    };
   },
   async leaderboard(v: HTMLElement) {
     v.innerHTML = '<h2>🏆 Top 50</h2><div class="card" id="lbBox"><div class="muted">Loading…</div></div>';
@@ -701,7 +952,7 @@ const UI = {
       const rows: any[] = [];
       s.forEach((c: any) => rows.push(c.val()));
       rows.sort((a, b) => b.points - a.points);
-      box.innerHTML = '<table class="lb"><tr><th>#</th><th>Player</th><th>⭐</th><th>Wins</th></tr>' + rows.map((r, i) => '<tr class="' + (r.username === Auth.user.username ? 'me' : '') + '"><td>' + (i + 1) + '</td><td>' + esc(r.username || '?') + '</td><td>' + r.points + '</td><td>' + (r.wins || 0) + '</td></tr>').join('') + '</table>';
+      box.innerHTML = '<table class="lb"><tr><th>#</th><th>Player</th><th>⭐</th><th>Wins</th></tr>' + rows.map((r, i) => '<tr class="' + (r.username === Auth.user.username ? 'me' : '') + '"><td>' + (i + 1) + '</td><td>' + (r.photo ? '<img src="' + r.photo + '" style="width:24px;height:24px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px">' : '') + esc(r.username || '?') + '</td><td>' + r.points + '</td><td>' + (r.wins || 0) + '</td></tr>').join('') + '</table>';
     } catch (e) {
       box.innerHTML = '<div class="err">Could not load.</div>';
     }
@@ -719,27 +970,127 @@ const UI = {
       const m = s.val();
       const d = document.createElement('div');
       d.className = 'msg';
-      d.innerHTML = '<span class="who">' + esc(m.w) + '</span> ' + esc(m.t);
+      d.innerHTML = (m.p ? '<img src="' + m.p + '" style="width:24px;height:24px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px">' : '')
+        + '<span class="who">' + esc(m.w) + '</span> ' + esc(m.t);
       log.appendChild(d);
       log.scrollTop = log.scrollHeight;
     };
     ref.on('child_added', h);
     (window as any)._chatOff = () => ref.off('child_added', h);
     const send = () => {
-      const t = $('#chatIn').value.trim();
+      const t = ($('#chatIn') as any).value.trim();
       if (!t) return;
-      Backend.db.ref('bgh_chat').push({ w: Auth.user.username, t });
-      $('#chatIn').value = '';
+      Backend.db.ref('bgh_chat').push({ w: Auth.user.username, t, p: Auth.user.photo || '' });
+      ($('#chatIn') as any).value = '';
     };
-    $('#chatSend').onclick = send;
+    ($('#chatSend') as HTMLElement).onclick = send;
     $('#chatIn').addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Enter') send();
+    });
+  },
+  authView(v: HTMLElement) {
+    let tab = 'login';
+    const draw = () => {
+      const tabs = [['login', 'Log in'], ['signup', 'Sign up'], ['forgot', 'Forgot password']];
+      v.innerHTML = '<h2>🎲 Welcome to Board Game Hub</h2><div class="card">'
+        + '<div class="row" style="gap:6px;margin-bottom:12px">' + tabs.map(t =>
+          '<button class="btn small ' + (tab === t[0] ? '' : 'secondary') + '" data-at="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>'
+        + '<div id="authForm"></div><div id="authMsg" class="muted" style="margin-top:8px"></div></div>'
+        + (Backend.configured() ? '' : '<div class="card"><div class="muted">Demo mode: connect Firebase in Profile → Setup for real accounts.</div></div>');
+      v.querySelectorAll('[data-at]').forEach((b: any) => b.onclick = () => { tab = b.dataset.at; draw(); });
+      const f = $('#authForm') as HTMLElement;
+      const msg = (t: string, ok?: boolean) => {
+        const m = $('#authMsg') as HTMLElement;
+        m.innerHTML = t;
+        m.className = ok ? 'ok' : 'err';
+      };
+      if (tab === 'login') {
+        f.innerHTML = '<label>Email</label><input id="aEmail" type="email" placeholder="you@email.com">'
+          + '<label>Password</label><input id="aPw" type="password" placeholder="••••••">'
+          + '<button class="btn" id="aGo">Log in</button>';
+        (f.querySelector('#aGo') as HTMLElement).onclick = async () => {
+          try {
+            await Auth.login((f.querySelector('#aEmail') as any).value, (f.querySelector('#aPw') as any).value);
+            await Friends.setOnline(true);
+            UI.go('home');
+          } catch (e: any) { msg(esc(e.message || 'Login failed')); }
+        };
+      } else if (tab === 'signup') {
+        f.innerHTML = '<label>Username (3-16 letters, numbers, _)</label><input id="aName" maxlength="16" placeholder="PlayerOne">'
+          + '<label>Email</label><input id="aEmail" type="email" placeholder="you@email.com">'
+          + '<label>Password (6+ characters)</label><input id="aPw" type="password" placeholder="••••••">'
+          + '<button class="btn" id="aGo">Create account — get 1,000 ⭐ free</button>';
+        (f.querySelector('#aGo') as HTMLElement).onclick = async () => {
+          try {
+            await Auth.signup((f.querySelector('#aEmail') as any).value, (f.querySelector('#aPw') as any).value, (f.querySelector('#aName') as any).value);
+            await Friends.setOnline(true);
+            UI.go('home');
+          } catch (e: any) { msg(esc(e.message || 'Signup failed')); }
+        };
+      } else {
+        f.innerHTML = '<div class="muted" style="margin-bottom:8px">We\'ll email you a reset link.</div>'
+          + '<label>Email</label><input id="aEmail" type="email" placeholder="you@email.com">'
+          + '<button class="btn" id="aGo">Send reset email</button>';
+        (f.querySelector('#aGo') as HTMLElement).onclick = async () => {
+          try {
+            await Auth.reset((f.querySelector('#aEmail') as any).value);
+            msg('Reset email sent — check your inbox.', true);
+          } catch (e: any) { msg(esc(e.message || 'Failed to send')); }
+        };
+      }
+    };
+    draw();
+  },
+  async friends(v: HTMLElement) {
+    v.innerHTML = '<h2>👥 Friends</h2><div class="card" id="frBox"><div class="muted">Loading…</div></div>';
+    const box = $('#frBox') as HTMLElement;
+    if (Backend.mode !== 'firebase' || !Auth.user || Auth.user.uid === 'local') {
+      box.innerHTML = '<div class="muted">Friends need a Firebase account.<br><br>Go to <b>Profile → Setup</b>, paste your Firebase keys, then log in.</div>';
+      return;
+    }
+    const reqs = await Friends.requests();
+    const list = await Friends.list();
+    let h = '<label>Add friend by username</label><div class="row"><input id="fq" class="grow" placeholder="Username" maxlength="16"><button class="btn small" id="fadd">Add</button></div>';
+    if (reqs.length) {
+      h += '<h3>Requests (' + reqs.length + ')</h3>';
+      for (const r of reqs) {
+        h += '<div class="row" style="align-items:center"><span class="grow"><b>' + esc(r.from || '?') + '</b></span>'
+          + '<button class="btn small" data-acc="' + r.uid + '">Accept</button>'
+          + '<button class="btn small secondary" data-dec="' + r.uid + '">Decline</button></div>';
+      }
+    }
+    h += '<h3>Your friends (' + list.length + ')</h3>';
+    if (!list.length) h += '<div class="muted">No friends yet — add someone above.</div>';
+    for (const f of list) {
+      h += '<div class="row" style="align-items:center">'
+        + (f.photo ? '<img src="' + f.photo + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover">' : '<span style="font-size:24px">👤</span>')
+        + '<span class="grow">' + (f.online ? '🟢' : '⚪') + ' <b>' + esc(f.username) + '</b></span>'
+        + '<button class="btn small secondary" data-rm="' + f.uid + '">Remove</button></div>';
+    }
+    box.innerHTML = h;
+    (box.querySelector('#fadd') as HTMLElement).onclick = async () => {
+      const q = (box.querySelector('#fq') as any).value;
+      const u = await Friends.findUser(q);
+      if (!u) { toast('User not found'); return; }
+      if (u.uid === Auth.user.uid) { toast("That's you!"); return; }
+      await Friends.sendRequest(u.uid);
+      UI.go('friends');
+    };
+    box.querySelectorAll('[data-acc]').forEach((b: any) => b.onclick = async () => { await Friends.accept(b.dataset.acc); UI.go('friends'); });
+    box.querySelectorAll('[data-dec]').forEach((b: any) => b.onclick = async () => { await Friends.decline(b.dataset.dec); UI.go('friends'); });
+    box.querySelectorAll('[data-rm]').forEach((b: any) => b.onclick = async () => {
+      if (confirm('Remove this friend?')) { await Friends.remove(b.dataset.rm); UI.go('friends'); }
     });
   }
 };
 
 document.querySelectorAll('#bottomNav button').forEach((b: any) => b.onclick = () => {
   Sound.click();
+  // Gate: firebase mode requires login before using the hub
+  if (Backend.mode === 'firebase' && (!Auth.user || Auth.user.uid === 'local') && b.dataset.v !== 'auth' && b.dataset.v !== 'profile') {
+    UI.go('auth');
+    return;
+  }
   if (UI.view === 'play') {
     promptQuitGame(() => UI.go(b.dataset.v));
     return;
@@ -881,6 +1232,7 @@ function promptQuitGame(onConfirm?: () => void) {
       }
       watchRoomCleanup();
       window._C = null;
+      try { Voice.leave(); } catch (e) {}
       closeModal();
       if (onConfirm) {
         onConfirm();
@@ -1303,10 +1655,17 @@ function watchRoom(gameId: string) {
   _roomWatching = true;
   UI.view = 'play';
   const v = $('#view');
-  v.innerHTML = '<div class="card center"><h2>🌐 Room ' + Net.room.code + '</h2><div class="muted" id="wMsg">Waiting for players… ' + Net.room.seats.length + '/' + Net.room.seatsNeeded + '</div><button class="btn secondary" id="lvBtn">Leave</button></div>';
+  v.innerHTML = '<div class="card center"><h2>🌐 Room ' + Net.room.code + '</h2><div class="muted" id="wMsg">Waiting for players… ' + Net.room.seats.length + '/' + Net.room.seatsNeeded + '</div><button class="btn secondary" id="lvBtn">Leave</button><button class="btn secondary" id="voiceBtn" style="margin-top:8px">🎤 Join voice chat</button></div>';
   $('#lvBtn').onclick = () => {
     watchRoomCleanup();
     UI.go('game');
+  };
+  $('#voiceBtn').onclick = async () => {
+    const ok = await Voice.join('bgh-' + Net.room.code);
+    if (ok) {
+      const vb = $('#voiceBtn') as HTMLElement;
+      if (vb) { vb.textContent = '🎤 Voice on — tap 🎤 in header to mute'; vb.setAttribute('disabled', 'true'); }
+    }
   };
   Net.onUpdate((room: any) => {
     const wm = $('#wMsg');
@@ -11941,7 +12300,17 @@ async function boot() {
   await Backend.init();
   Auth.init();
   UI.refresh();
-  UI.go('home');
+  // In firebase mode, wait briefly for auth state before choosing the landing view
+  if (Backend.mode === 'firebase') {
+    let settled = false;
+    await new Promise<void>(res => {
+      const t = setTimeout(() => { if (!settled) { settled = true; res(); } }, 1500);
+      Backend.onUser(() => { if (!settled) { settled = true; clearTimeout(t); res(); } });
+    });
+    UI.go(Auth.user ? 'home' : 'auth');
+  } else {
+    UI.go('home');
+  }
 }
 
 if (document.readyState === 'loading') {
