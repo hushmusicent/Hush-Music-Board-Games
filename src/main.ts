@@ -18,10 +18,15 @@ declare global {
    Firebase + LiveKit keys are baked in below, so online PvP and voice
    chat work for every player with no setup. A manually pasted config
    (Profile → Setup) overrides them.
+   SECURITY: the LiveKit API secret must NEVER be baked in here — tokens
+   are minted server-side (CONFIG.tokenUrl + '/livekit-token'). The secret
+   lives only in the server's env vars.
    Demo mode (this device only) works without keys. */
 const CONFIG = {
   firebase: { apiKey: "AIzaSyAhT_oPTtMTlUvHaSOf7zWvnUwTGyJf4sk", authDomain: "project-556676b3-bbce-4e02-8ce.firebaseapp.com", databaseURL: "https://project-556676b3-bbce-4e02-8ce-default-rtdb.firebaseio.com", projectId: "project-556676b3-bbce-4e02-8ce", appId: "1:1043689485585:web:a96258740de6856c5f88b0" },
-  livekit: { url: "wss://board-games-nlukangq.livekit.cloud", apiKey: "APID28tjQfDMHrd", apiSecret: "wWFoOYnTDbvisNdeUCgMxSKeL5mkjccaUHEcEdzOvNbA" }
+  livekit: { url: "wss://board-games-nlukangq.livekit.cloud", apiKey: "APID28tjQfDMHrd", apiSecret: "" },
+  // Your Emergent backend base URL, e.g. "https://your-app.emergent.host" — serves /livekit-token
+  tokenUrl: ""
 };
 try {
   const saved = JSON.parse(localStorage.getItem('bgh_fbcfg') || 'null');
@@ -30,6 +35,10 @@ try {
 try {
   const lks = JSON.parse(localStorage.getItem('bgh_lkcfg') || 'null');
   if (lks) CONFIG.livekit = lks;
+} catch (e) {}
+try {
+  const tu = localStorage.getItem('bgh_tokenurl');
+  if (tu) CONFIG.tokenUrl = tu;
 } catch (e) {}
 
 const START_POINTS = 1000, DAILY_BONUS = 500;
@@ -230,7 +239,8 @@ const Auth = {
     if (Backend.mode === 'firebase') {
       Backend.onUser(u => {
         this.user = u ? { uid: u.uid, username: u.displayName || name, email: u.email, photo: '' } : null;
-        if (u) { this._pull(); Friends.setOnline(true); }
+        if (u) { this._pull(); Friends.setOnline(true); Friends.watchRequests(); }
+        else { Friends.unwatchRequests(); }
         UI.refresh();
         if (Backend.mode === 'firebase' && !this.user && UI.view !== 'auth') UI.go('auth');
       });
@@ -309,6 +319,7 @@ const Auth = {
   },
   async logout() {
     try { await Friends.setOnline(false); } catch (e) {}
+    Friends.unwatchRequests();
     Voice.leave();
     if (Backend.mode === 'firebase') {
       try { await Backend.auth.signOut(); } catch (e) {}
@@ -478,7 +489,7 @@ const Voice = {
   active: false,
   configured() {
     const l = CONFIG.livekit;
-    return !!(l.url && l.apiKey && l.apiSecret);
+    return !!(l.url && l.apiKey && CONFIG.tokenUrl);
   },
   async join(roomName: string) {
     if (!this.configured()) { toast('Voice needs LiveKit keys (Profile → Setup).'); return false; }
@@ -515,20 +526,12 @@ const Voice = {
     const mb = $('#micBtn');
     if (mb) mb.classList.add('hidden');
   },
-  // Minimal JWT signer (HS256) via WebCrypto — secret stays in the user's own config.
+  // Tokens are minted server-side — the API secret never touches the client.
+  // TOKEN_URL is your Emergent backend base URL (set below).
   async _token(roomName: string, identity: string) {
-    const header = { alg: 'HS256', typ: 'JWT' };
-    const now = Math.floor(Date.now() / 1000);
-    const payload = {
-      iss: CONFIG.livekit.apiKey, sub: identity, iat: now, exp: now + 3600,
-      video: { room: roomName, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true }
-    };
-    const b64 = (o: any) => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    const data = b64(header) + '.' + b64(payload);
-    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(CONFIG.livekit.apiSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
-    const s = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    return data + '.' + s;
+    const r = await fetch(CONFIG.tokenUrl + '/livekit-token?room=' + encodeURIComponent(roomName) + '&identity=' + encodeURIComponent(identity));
+    const j = await r.json();
+    return j.token;
   }
 };
 
@@ -592,7 +595,38 @@ const Friends = {
     const r = Backend.db.ref('bgh_presence/' + Auth.user.uid);
     if (on) { r.set({ online: true, at: Date.now() }); r.onDisconnect().set({ online: false, at: Date.now() }); }
     else r.set({ online: false, at: Date.now() });
-  }
+  },
+  _reqRef: null as any,
+  _reqCount: 0,
+  _reqInit: false,
+  _updateBadge() {
+    const b = document.getElementById('friendsBadge');
+    if (!b) return;
+    if (this._reqCount > 0) { b.textContent = String(this._reqCount); b.classList.remove('hidden'); }
+    else { b.textContent = ''; b.classList.add('hidden'); }
+  },
+  watchRequests() {
+    this.unwatchRequests();
+    if (Backend.mode !== 'firebase' || !Auth.user || Auth.user.uid === 'local') return;
+    this._reqRef = Backend.db.ref('bgh_requests/' + Auth.user.uid);
+    this._reqInit = false;
+    this._reqRef.on('value', (s: any) => {
+      const r = s.val() || {};
+      const n = Object.keys(r).length;
+      if (this._reqInit && n > this._reqCount) toast('New friend request!');
+      this._reqCount = n;
+      this._reqInit = true;
+      this._updateBadge();
+      if (UI.view === 'friends') UI.render();
+    });
+  },
+  unwatchRequests() {
+    if (this._reqRef) { try { this._reqRef.off('value'); } catch (e) {} }
+    this._reqRef = null;
+    this._reqCount = 0;
+    this._reqInit = false;
+    this._updateBadge();
+  },
 };
 
 /* ================= UI shell ================= */
@@ -1268,12 +1302,16 @@ const UI = {
     }
     box.innerHTML = h;
     (box.querySelector('#fadd') as HTMLElement).onclick = async () => {
-      let q = (box.querySelector('#fq') as any).value.trim().replace(/^#/, '').replace(/^HUSHPLAYER_/i, '');
-      const u = await Friends.findUser(q);
-      if (!u) { toast('User not found'); return; }
-      if (u.uid === Auth.user.uid) { toast("That's you!"); return; }
-      await Friends.sendRequest(u.uid);
-      UI.go('friends');
+      try {
+        let q = (box.querySelector('#fq') as any).value.trim().replace(/^#/, '').replace(/^HUSHPLAYER_/i, '');
+        const u = await Friends.findUser(q);
+        if (!u) { toast('User not found'); return; }
+        if (u.uid === Auth.user.uid) { toast("That's you!"); return; }
+        await Friends.sendRequest(u.uid);
+        UI.go('friends');
+      } catch (e: any) {
+        toast('Request failed: ' + (e && e.message ? e.message : 'network error'));
+      }
     };
     box.querySelectorAll('[data-acc]').forEach((b: any) => b.onclick = async () => { await Friends.accept(b.dataset.acc); UI.go('friends'); });
     box.querySelectorAll('[data-dec]').forEach((b: any) => b.onclick = async () => { await Friends.decline(b.dataset.dec); UI.go('friends'); });
