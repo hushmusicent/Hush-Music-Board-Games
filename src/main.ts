@@ -15,12 +15,13 @@ declare global {
 }
 
 /* ================= CONFIG =================
-   Firebase keys are baked in below, so online PvP works for every player
-   with no setup. A manually pasted config (Profile → Setup) overrides them.
+   Firebase + LiveKit keys are baked in below, so online PvP and voice
+   chat work for every player with no setup. A manually pasted config
+   (Profile → Setup) overrides them.
    Demo mode (this device only) works without keys. */
 const CONFIG = {
   firebase: { apiKey: "AIzaSyAhT_oPTtMTlUvHaSOf7zWvnUwTGyJf4sk", authDomain: "project-556676b3-bbce-4e02-8ce.firebaseapp.com", databaseURL: "https://project-556676b3-bbce-4e02-8ce-default-rtdb.firebaseio.com", projectId: "project-556676b3-bbce-4e02-8ce", appId: "1:1043689485585:web:a96258740de6856c5f88b0" },
-  livekit: { url: "", apiKey: "", apiSecret: "" }
+  livekit: { url: "wss://board-games-nlukangq.livekit.cloud", apiKey: "APID28tjQfDMHrd", apiSecret: "wWFoOYnTDbvisNdeUCgMxSKeL5mkjccaUHEcEdzOvNbA" }
 };
 try {
   const saved = JSON.parse(localStorage.getItem('bgh_fbcfg') || 'null');
