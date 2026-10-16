@@ -613,17 +613,47 @@ const UI = {
     const hqb = $('#headerQuitBtn');
     if (hqb) hqb.classList.toggle('hidden', this.view !== 'play');
   },
+  homeCat: 'all',
   home(v: HTMLElement) {
+    const cats: Array<[string, string]> = [['all', 'All'], ['classics', 'Classics'], ['strategy', 'Strategy'], ['family', 'Family'], ['party', 'Party']];
+    const catIds: Record<string, string[]> = {
+      classics: ['connect4', 'mancala', 'battleship', 'chutes', 'candyland'],
+      strategy: ['monopoly', 'payday', 'life', 'clue', 'scrabble', 'guesswho'],
+      family: ['trouble', 'sorry', 'jumanji'],
+      party: ['pictionary']
+    };
+    const ids = UI.homeCat === 'all' ? Object.keys(GAMES) : (catIds[UI.homeCat] || []).filter(id => GAMES[id]);
     let cards = '';
-    for (const id in GAMES) {
+    for (const id of ids) {
       const g = GAMES[id];
-      cards += '<div class="gamecard" data-g="' + id + '"><div class="e">' + g.icon + '</div><div class="n">' + esc(g.name) + '</div><div class="t">' + esc(g.desc) + '</div></div>';
+      cards += '<div class="hg-gamecard">'
+        + '<div class="hg-icon">' + g.icon + '</div>'
+        + '<div class="hg-name">' + esc(g.name) + '</div>'
+        + '<div class="hg-desc">' + esc(g.desc) + '</div>'
+        + '<div class="hg-row"><button class="hg-howto" data-howto="' + id + '">How to Play</button>'
+        + '<button class="hg-play" data-play="' + id + '">PLAY &rarr;</button></div></div>';
     }
-    v.innerHTML = '<h2>🎲 Board Game Hub</h2><div class="card"><div class="muted">15 classics. Every game plays <b>🤖 vs Computer</b>, <b>👥 Pass &amp; Play</b> (one phone), or <b>🌐 Online PvP</b> (room code, needs Firebase in Profile → Setup).</div></div><div class="grid">' + cards + '</div>';
-    v.querySelectorAll('.gamecard').forEach((c: any) => c.onclick = () => {
+    v.innerHTML = '<div class="hero-card">'
+      + '<div class="hero-label">HUSH MUSIC ENTERTAINMENT</div>'
+      + '<h1 class="hero-title">Hush Music Board Games</h1>'
+      + '<p class="hero-desc">Play 15 timeless board game classics. Outsmart bots or create private rooms to battle friends.</p>'
+      + '<button class="btn btn-silver" id="dailyBtn">&#127873; Claim Daily Bonus: +500 &#11088;</button>'
+      + '<button class="btn btn-outline" id="homeLobbyBtn">&#128101; Multiplayer Lobby / Join Code</button></div>'
+      + '<div class="cat-tabs">' + cats.map(c => '<button class="cat-tab' + (UI.homeCat === c[0] ? ' active' : '') + '" data-cat="' + c[0] + '">' + c[1] + '</button>').join('') + '</div>'
+      + '<div class="hg-grid">' + cards + '</div>';
+    const claimDaily = () => {
+      const day = Math.floor(Date.now() / 864e5);
+      if (Points.lastDaily === day) { toast('Daily bonus already claimed &mdash; come back tomorrow!'); return; }
+      Points.checkDaily();
+    };
+    (v.querySelector('#dailyBtn') as HTMLElement).onclick = () => { Sound.click(); claimDaily(); };
+    (v.querySelector('#homeLobbyBtn') as HTMLElement).onclick = () => { Sound.click(); openLobbyModal(); };
+    v.querySelectorAll('.cat-tab').forEach((t: any) => t.onclick = () => { Sound.click(); UI.homeCat = t.dataset.cat; UI.home(v); });
+    v.querySelectorAll('[data-howto]').forEach((b: any) => b.onclick = (e: Event) => { e.stopPropagation(); showGameInstructions(b.dataset.howto); });
+    v.querySelectorAll('[data-play]').forEach((b: any) => b.onclick = () => {
       Sound.click();
-      this.curGame = c.dataset.g;
-      this.go('game');
+      UI.curGame = b.dataset.play;
+      UI.go('game');
     });
   },
   gameMode(v: HTMLElement) {
@@ -827,18 +857,21 @@ const UI = {
     if (!this.curGame) return;
     const g = GAMES[this.curGame];
     const [pmin, pmax] = g.p;
-    v.innerHTML = '<button class="btn secondary small" id="backBtn">← Back</button><h2>🌐 Online: ' + esc(g.name) + '</h2>'
+    v.innerHTML = '<button class="btn secondary small" id="backBtn">&larr; Back</button>'
+      + '<div class="hero-card" style="margin-top:10px"><div class="hero-label">ONLINE MULTIPLAYER</div>'
+      + '<h1 class="hero-title" style="font-size:24px">&#127760; Online: ' + esc(g.name) + '</h1>'
+      + '<p class="hero-desc">Create a private room and share the 4-digit code, or join a friend&rsquo;s room.</p></div>'
       + '<div class="card"><h3>Create a room</h3><label>Players</label><select id="seatN">' + Array.from({ length: pmax - pmin + 1 }, (_, i) => '<option value="' + (pmin + i) + '">' + (pmin + i) + ' players</option>').join('') + '</select>'
-      + '<button class="btn" id="mkRoom">Create room</button><div id="roomInfo"></div></div>'
-      + '<div class="card"><h3>Join a room</h3><label>Room code</label><input id="joinCode" inputmode="numeric" placeholder="4-digit code"><button class="btn secondary" id="jnRoom">Join</button></div>';
+      + '<button class="btn btn-silver" id="mkRoom">&#65291; Create ' + esc(g.name) + ' Room</button><div id="roomInfo"></div></div>'
+      + '<div class="card"><h3>Join a room</h3><label>Room code</label><input id="joinCode" inputmode="numeric" placeholder="4-digit code"><button class="btn btn-outline" id="jnRoom">Join Room</button></div>';
     $('#backBtn').onclick = () => this.go('game');
     $('#mkRoom').onclick = async () => {
-      const seats = parseInt($('#seatN').value);
+      const seats = parseInt(($('#seatN') as any).value);
       const code = await Net.create(UI.curGame!, seats);
       if (code) watchRoom(UI.curGame!);
     };
     $('#jnRoom').onclick = async () => {
-      const code = $('#joinCode').value;
+      const code = ($('#joinCode') as any).value;
       const c = await Net.join(code);
       if (c) watchRoom(this.curGame!);
     };
@@ -848,23 +881,34 @@ const UI = {
     const loggedIn = fb && Auth.user && Auth.user.uid !== 'local';
     const photo = Auth.user && Auth.user.photo
       ? '<img src="' + Auth.user.photo + '" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">'
-      : '<div style="width:80px;height:80px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:36px">👤</div>';
-    v.innerHTML = '<h2>👤 Profile</h2><div class="card"><div class="row" style="align-items:center;gap:12px">' + photo
-      + '<div><h3 style="margin:0">' + esc(Auth.user ? Auth.user.username : '…') + '</h3>'
+      : '<div style="width:80px;height:80px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:36px;border:2px solid var(--line)">👤</div>';
+    const breakdown = Object.keys(GAMES).map(id => '<div class="bd-cell"><div class="bd-icon">' + GAMES[id].icon + '</div><div class="bd-name">' + esc(GAMES[id].name) + '</div><div class="bd-mark' + (Points.wins > 0 ? ' won' : '') + '">' + (Points.wins > 0 ? '✓' : '&ndash;') + '</div></div>').join('');
+    v.innerHTML = '<h2>&#128100; Profile</h2>'
+      + '<div class="card"><div class="row" style="align-items:center;gap:12px">' + photo
+      + '<div style="flex:1"><h2 style="margin:0 0 2px">' + esc(Auth.user ? Auth.user.username : '…') + '</h2>'
       + '<div class="muted">' + esc(Auth.user && Auth.user.email ? Auth.user.email : '') + '</div>'
-      + '<div class="muted">Points: <b>⭐ ' + Points.balance + '</b> · Wins: <b>' + Points.wins + '</b></div></div></div>'
-      + (loggedIn
-        ? '<div class="row" style="gap:8px;margin-top:12px"><button class="btn secondary grow" id="photoBtn">📷 Upload photo</button>'
-        + '<input type="file" id="photoIn" accept="image/*" style="display:none"></div>'
-        + '<div class="ok">Online connected ✓</div><div class="muted">Voice chat: ' + (Voice.configured() ? '<span class="ok">LiveKit keys present ✓</span>' : '<span class="err">no keys — voice disabled</span>') + '</div>'
-        + '<button class="btn secondary" id="loBtn">Log out</button>'
-        + '<button class="btn secondary" id="eraseBtn" style="border-color:#e74c3c;color:#e74c3c;margin-top:8px">🗑 Erase my account</button>'
-        : '')
-      + (!fb ? '<div class="card"><h3>🔑 Setup — free online PvP</h3><div class="muted">Same Firebase project as your other hub works here.<br>1. console.firebase.google.com → project → ⚙ → <i>Your apps</i> → Web → copy <b>firebaseConfig</b>.<br>2. Paste it below → Save → reload.<br>3. For voice chat: <b>cloud.livekit.io</b> → free account → create project → paste URL + API key + secret below.</div><textarea id="fbCfg" rows="6" placeholder=\'{"apiKey":"…","authDomain":"…","databaseURL":"…","projectId":"…","appId":"…"}\'></textarea><button class="btn" id="saveFb">Save keys &amp; reload</button>'
-        + '<label style="margin-top:12px">LiveKit (voice chat) — optional</label><textarea id="lkCfg" rows="3" placeholder=\'{"url":"wss://…","apiKey":"…","apiSecret":"…"}\'></textarea><button class="btn secondary" id="saveLk">Save voice keys &amp; reload</button></div>'
-        + '<label>Display name (demo mode)</label><input id="nmIn" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="nmBtn">Save name</button>'
-        : '')
-      + '</div>';
+      + (loggedIn ? '<button class="btn small secondary" id="photoBtn" style="margin-top:8px">&#128247; Change Avatar</button><input type="file" id="photoIn" accept="image/*" style="display:none">' : '')
+      + '</div></div></div>'
+      + '<div class="row" style="gap:10px"><div class="stat-box grow"><div class="stat-label">WALLET POINTS</div><div class="stat-val">&#11088; ' + Points.balance + '</div></div>'
+      + '<div class="stat-box grow"><div class="stat-label">VICTORIES RECORDED</div><div class="stat-val">' + Points.wins + ' Wins</div></div></div>'
+      + '<button class="btn btn-silver" id="profDaily">&#127873; CLAIM DAILY BONUS (+500 &#11088;)</button>'
+      + '<div class="card"><h3>&#127941; GAME VICTORIES BREAKDOWN</h3><div class="breakdown-grid">' + breakdown + '</div>'
+      + '<div class="muted" style="font-size:11px;margin-top:8px">Per-game victory tracking coming soon &mdash; totals shown above.</div></div>'
+      + '<div class="card"><h3>&#9888; System &amp; Cloud Integration</h3>'
+      + '<div class="sys-row"><span>Firebase Database</span><span class="' + (fb ? 'pill-connected' : 'pill-off') + '">' + (fb ? 'Connected' : 'Not connected') + '</span></div>'
+      + '<div class="sys-row"><span>In-Game Voice Talk</span><span class="' + (Voice.configured() ? 'pill-connected' : 'pill-off') + '">' + (Voice.configured() ? 'Connected' : 'No keys') + '</span></div></div>'
+      + (!fb ? '<div class="card"><h3>&#128273; Setup &mdash; free online PvP</h3><div class="muted">Same Firebase project as your other hub works here.<br>1. console.firebase.google.com &rarr; project &rarr; &#9881; &rarr; <i>Your apps</i> &rarr; Web &rarr; copy <b>firebaseConfig</b>.<br>2. Paste it below &rarr; Save &rarr; reload.<br>3. For voice chat: <b>cloud.livekit.io</b> &rarr; free account &rarr; create project &rarr; paste URL + API key + secret below.</div><textarea id="fbCfg" rows="6" placeholder=\'{"apiKey":"…","authDomain":"…","databaseURL":"…","projectId":"…","appId":"…"}\'></textarea><button class="btn btn-silver" id="saveFb">Save keys &amp; reload</button>'
+        + '<label style="margin-top:12px">LiveKit (voice chat) &mdash; optional</label><textarea id="lkCfg" rows="3" placeholder=\'{"url":"wss://…","apiKey":"…","apiSecret":"…"}\'></textarea><button class="btn secondary" id="saveLk">Save voice keys &amp; reload</button>'
+        + '<label style="margin-top:12px">Display name (demo mode)</label><input id="nmIn" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="nmBtn">Save name</button></div>' : '')
+      + (loggedIn ? '<button class="btn secondary" id="loBtn">Log out</button>' : '')
+      + (loggedIn ? '<div class="card" style="border-color:#e74c3c"><h3 style="color:#e74c3c">&#128465; Erase Account</h3><div class="muted" style="margin-bottom:8px">Permanently delete your profile, photo, points, friends and login. This cannot be undone.</div><button class="btn secondary" id="eraseBtn" style="border-color:#e74c3c;color:#e74c3c">&#128465; Erase my account</button></div>' : '');
+    const pd = $('#profDaily');
+    if (pd) pd.onclick = () => {
+      Sound.click();
+      const day = Math.floor(Date.now() / 864e5);
+      if (Points.lastDaily === day) { toast('Daily bonus already claimed &mdash; come back tomorrow!'); return; }
+      Points.checkDaily();
+    };
     const s = $('#saveFb');
     if (s) s.onclick = () => {
       try {
@@ -941,10 +985,18 @@ const UI = {
     };
   },
   async leaderboard(v: HTMLElement) {
-    v.innerHTML = '<h2>🏆 Top 50</h2><div class="card" id="lbBox"><div class="muted">Loading…</div></div>';
-    const box = $('#lbBox');
+    v.innerHTML = '<h2>&#127942; Top 50 Leaderboard</h2><div class="card" id="lbBox"><div class="muted">Loading…</div></div>';
+    const box = $('#lbBox') as HTMLElement;
+    const rankPill = (n: string) => '<div style="text-align:center;margin-bottom:10px"><span class="lb-rank">Your Rank: #' + n + '</span></div>';
+    const medal = (i: number) => i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : String(i + 1);
+    const rowHtml = (r: any, i: number) => {
+      const me = r.username === Auth.user.username;
+      const av = r.photo ? '<img src="' + r.photo + '" style="width:24px;height:24px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px">' : '';
+      return '<tr class="' + (me ? 'me' : '') + '"><td>' + medal(i) + '</td><td>' + av + esc(r.username || '?') + '</td><td>&#11088; ' + r.points + '</td><td>' + (r.wins || 0) + '</td></tr>';
+    };
+    const tableHead = '<table class="lb"><tr><th>#</th><th>Player</th><th>&#11088; Points</th><th>Total Wins</th></tr>';
     if (Backend.mode !== 'firebase') {
-      box.innerHTML = '<table class="lb"><tr><th>#</th><th>Player</th><th>⭐</th><th>Wins</th></tr><tr class="me"><td>1</td><td>' + esc(Auth.user.username) + '</td><td>' + Points.balance + '</td><td>' + Points.wins + '</td></tr></table><div class="muted">Demo mode — connect Firebase in Profile → Setup for the shared board.</div>';
+      box.innerHTML = rankPill('1') + tableHead + rowHtml({ username: Auth.user.username, points: Points.balance, wins: Points.wins }, 0) + '</table><div class="muted">Demo mode &mdash; connect Firebase in Profile &rarr; Setup for the shared board.</div>';
       return;
     }
     try {
@@ -952,7 +1004,9 @@ const UI = {
       const rows: any[] = [];
       s.forEach((c: any) => rows.push(c.val()));
       rows.sort((a, b) => b.points - a.points);
-      box.innerHTML = '<table class="lb"><tr><th>#</th><th>Player</th><th>⭐</th><th>Wins</th></tr>' + rows.map((r, i) => '<tr class="' + (r.username === Auth.user.username ? 'me' : '') + '"><td>' + (i + 1) + '</td><td>' + (r.photo ? '<img src="' + r.photo + '" style="width:24px;height:24px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px">' : '') + esc(r.username || '?') + '</td><td>' + r.points + '</td><td>' + (r.wins || 0) + '</td></tr>').join('') + '</table>';
+      const myRank = rows.findIndex(r => r.username === Auth.user.username);
+      box.innerHTML = rankPill(myRank >= 0 ? String(myRank + 1) : '&ndash;')
+        + tableHead + rows.map((r, i) => rowHtml(r, i)).join('') + '</table>';
     } catch (e) {
       box.innerHTML = '<div class="err">Could not load.</div>';
     }
@@ -990,14 +1044,33 @@ const UI = {
   },
   authView(v: HTMLElement) {
     let tab = 'login';
+    let pendingPhoto: string | null = null;
+    const emojiAvatar = (emoji: string) => {
+      const cv = document.createElement('canvas');
+      cv.width = 256; cv.height = 256;
+      const cx = cv.getContext('2d')!;
+      cx.fillStyle = '#223052';
+      cx.fillRect(0, 0, 256, 256);
+      cx.font = '180px serif';
+      cx.textAlign = 'center'; cx.textBaseline = 'middle';
+      cx.fillText(emoji, 128, 140);
+      return cv.toDataURL('image/png');
+    };
+    const avatarPreview = () => pendingPhoto
+      ? '<img src="' + pendingPhoto + '" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">'
+      : '<div style="width:64px;height:64px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:30px;border:2px solid var(--line)">👤</div>';
     const draw = () => {
-      const tabs = [['login', 'Log in'], ['signup', 'Sign up'], ['forgot', 'Forgot password']];
-      v.innerHTML = '<h2>🎲 Welcome to Board Game Hub</h2><div class="card">'
-        + '<div class="row" style="gap:6px;margin-bottom:12px">' + tabs.map(t =>
-          '<button class="btn small ' + (tab === t[0] ? '' : 'secondary') + '" data-at="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>'
-        + '<div id="authForm"></div><div id="authMsg" class="muted" style="margin-top:8px"></div></div>'
-        + (Backend.configured() ? '' : '<div class="card"><div class="muted">Demo mode: connect Firebase in Profile → Setup for real accounts.</div></div>');
-      v.querySelectorAll('[data-at]').forEach((b: any) => b.onclick = () => { tab = b.dataset.at; draw(); });
+      v.innerHTML = '<div class="auth-card">'
+        + '<img class="auth-logo" src="/src/assets/images/hush-music-games-silver-logo.webp" alt="Hush Music">'
+        + '<h1>Hush Music Board Games</h1>'
+        + '<p class="muted" style="margin-top:0">15 Classic Board Games with Points</p>'
+        + '<div class="auth-tabs">'
+        + '<button class="auth-tab' + (tab === 'login' ? ' active' : '') + '" data-at="login">Log In</button>'
+        + '<button class="auth-tab' + (tab === 'signup' ? ' active' : '') + '" data-at="signup">Sign Up (1,000 &#11088; Free)</button></div>'
+        + '<div id="authForm"></div><div id="authMsg" class="muted" style="margin-top:8px"></div>'
+        + '<div class="auth-footer">Ready for mobile and desktop. No credit card or installation required.</div></div>'
+        + (Backend.configured() ? '' : '<div class="card"><div class="muted">Demo mode: connect Firebase in Profile &rarr; Setup for real accounts.</div></div>');
+      v.querySelectorAll('[data-at]').forEach((b: any) => b.onclick = () => { Sound.click(); tab = b.dataset.at; draw(); });
       const f = $('#authForm') as HTMLElement;
       const msg = (t: string, ok?: boolean) => {
         const m = $('#authMsg') as HTMLElement;
@@ -1005,52 +1078,137 @@ const UI = {
         m.className = ok ? 'ok' : 'err';
       };
       if (tab === 'login') {
-        f.innerHTML = '<label>Email</label><input id="aEmail" type="email" placeholder="you@email.com">'
-          + '<label>Password</label><input id="aPw" type="password" placeholder="••••••">'
-          + '<button class="btn" id="aGo">Log in</button>';
+        f.innerHTML = '<label>Email or Username</label><input id="aId" placeholder="you@email.com or PlayerOne" autocomplete="username">'
+          + '<label>Password</label><input id="aPw" type="password" placeholder="••••••" autocomplete="current-password">'
+          + '<div style="text-align:right;margin:2px 0 4px"><a href="#" id="aForgot" class="linklike">Forgot Password?</a></div>'
+          + '<button class="btn btn-silver" id="aGo">&#128274; LOG IN</button>'
+          + '<div class="or-divider"><span>OR</span></div>'
+          + '<button class="btn btn-outline" id="aGoogle">&#10024; Continue with Google Account</button>'
+          + '<button class="btn secondary" id="aGuest">&#128100; Quick Guest Demo Play (Instant Access)</button>';
+        (f.querySelector('#aForgot') as HTMLElement).onclick = async (e: Event) => {
+          e.preventDefault();
+          const id = ((f.querySelector('#aId') as any).value || '').trim();
+          if (!id.includes('@')) { toast('Enter your email above first'); return; }
+          try { await Auth.reset(id); toast('Reset email sent &mdash; check your inbox.'); }
+          catch (er: any) { toast(esc(er.message || 'Failed to send reset email')); }
+        };
         (f.querySelector('#aGo') as HTMLElement).onclick = async () => {
+          const id = ((f.querySelector('#aId') as any).value || '').trim();
+          const pw = (f.querySelector('#aPw') as any).value;
+          if (!Backend.configured()) { msg('Demo mode &mdash; use Quick Guest Demo, or connect Firebase in Profile &rarr; Setup.'); return; }
           try {
-            await Auth.login((f.querySelector('#aEmail') as any).value, (f.querySelector('#aPw') as any).value);
+            let email = id;
+            if (!id.includes('@')) {
+              const u = await Friends.findUser(id);
+              if (!u || !u.email) { msg('Username not found'); return; }
+              email = u.email;
+            }
+            await Auth.login(email, pw);
+            localStorage.removeItem('bgh_guest');
             await Friends.setOnline(true);
             UI.go('home');
           } catch (e: any) { msg(esc(e.message || 'Login failed')); }
         };
-      } else if (tab === 'signup') {
-        f.innerHTML = '<label>Username (3-16 letters, numbers, _)</label><input id="aName" maxlength="16" placeholder="PlayerOne">'
-          + '<label>Email</label><input id="aEmail" type="email" placeholder="you@email.com">'
-          + '<label>Password (6+ characters)</label><input id="aPw" type="password" placeholder="••••••">'
-          + '<button class="btn" id="aGo">Create account — get 1,000 ⭐ free</button>';
+        (f.querySelector('#aGoogle') as HTMLElement).onclick = () => {
+          Sound.click();
+          if (!Backend.configured()) toast('Demo mode &mdash; connect Firebase in Profile &rarr; Setup for real accounts.');
+          else toast('Google sign-in coming soon.');
+        };
+        (f.querySelector('#aGuest') as HTMLElement).onclick = () => {
+          Sound.click();
+          localStorage.setItem('bgh_guest', '1');
+          Auth.user = { uid: 'local', username: 'Guest' + ri(100, 999) };
+          Auth._pullLocal();
+          UI.refresh();
+          UI.go('home');
+        };
+      } else {
+        const icons = ['🎧', '♠', '👑', '🎲', '💎', '🎤', '🎷', '🔥', '⭐', '🎮'];
+        f.innerHTML = '<label>Profile Picture</label>'
+          + '<div class="row" style="align-items:center;gap:12px"><div id="aAvPrev">' + avatarPreview() + '</div>'
+          + '<button class="btn small secondary" id="aUpPhoto">Upload Photo</button>'
+          + '<input type="file" id="aPhotoIn" accept="image/*" style="display:none"></div>'
+          + '<div class="muted" style="font-size:11px;font-weight:800;letter-spacing:1px;margin:10px 0 6px">OR SELECT GAME ICON</div>'
+          + '<div class="icon-pick">' + icons.map(e => '<button class="icon-pick-btn" data-emoji="' + e + '">' + e + '</button>').join('') + '</div>'
+          + '<label>Username (3-16 letters, numbers, _)</label><input id="aName" maxlength="16" placeholder="PlayerOne" autocomplete="username">'
+          + '<label>Email</label><input id="aEmail" type="email" placeholder="you@email.com" autocomplete="email">'
+          + '<label>Password (6+ characters)</label><input id="aPw" type="password" placeholder="••••••" autocomplete="new-password">'
+          + '<label>Confirm Password</label><input id="aPw2" type="password" placeholder="••••••" autocomplete="new-password">'
+          + '<button class="btn btn-silver" id="aGo">&#128274; CREATE ACCOUNT (+1,000 &#11088; FREE)</button>';
+        const prev = f.querySelector('#aAvPrev') as HTMLElement;
+        const refreshPrev = () => { prev.innerHTML = avatarPreview(); };
+        const upBtn = f.querySelector('#aUpPhoto') as HTMLElement;
+        const upIn = f.querySelector('#aPhotoIn') as any;
+        upBtn.onclick = () => upIn.click();
+        upIn.onchange = () => {
+          const file = upIn.files && upIn.files[0];
+          if (!file) return;
+          const rd = new FileReader();
+          rd.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+              const cv = document.createElement('canvas');
+              const sz = 256;
+              const sc = Math.min(1, sz / Math.max(img.width, img.height));
+              cv.width = Math.round(img.width * sc);
+              cv.height = Math.round(img.height * sc);
+              cv.getContext('2d')!.drawImage(img, 0, 0, cv.width, cv.height);
+              pendingPhoto = cv.toDataURL('image/jpeg', 0.8);
+              refreshPrev();
+              toast('Photo ready &mdash; it uploads when you create your account.');
+            };
+            img.src = rd.result as string;
+          };
+          rd.readAsDataURL(file);
+        };
+        f.querySelectorAll('.icon-pick-btn').forEach((b: any) => b.onclick = () => {
+          Sound.click();
+          pendingPhoto = emojiAvatar(b.dataset.emoji);
+          f.querySelectorAll('.icon-pick-btn').forEach((x: any) => x.classList.remove('sel'));
+          b.classList.add('sel');
+          refreshPrev();
+        });
         (f.querySelector('#aGo') as HTMLElement).onclick = async () => {
+          const name = (f.querySelector('#aName') as any).value;
+          const email = (f.querySelector('#aEmail') as any).value;
+          const pw = (f.querySelector('#aPw') as any).value;
+          const pw2 = (f.querySelector('#aPw2') as any).value;
+          if (!Backend.configured()) { msg('Demo mode &mdash; connect Firebase in Profile &rarr; Setup to create a real account.'); return; }
+          if (pw !== pw2) { msg('Passwords do not match'); return; }
           try {
-            await Auth.signup((f.querySelector('#aEmail') as any).value, (f.querySelector('#aPw') as any).value, (f.querySelector('#aName') as any).value);
+            await Auth.signup(email, pw, name);
+            if (pendingPhoto) { try { await Auth.uploadPhoto(pendingPhoto); } catch (e) {} }
+            localStorage.removeItem('bgh_guest');
             await Friends.setOnline(true);
             UI.go('home');
           } catch (e: any) { msg(esc(e.message || 'Signup failed')); }
-        };
-      } else {
-        f.innerHTML = '<div class="muted" style="margin-bottom:8px">We\'ll email you a reset link.</div>'
-          + '<label>Email</label><input id="aEmail" type="email" placeholder="you@email.com">'
-          + '<button class="btn" id="aGo">Send reset email</button>';
-        (f.querySelector('#aGo') as HTMLElement).onclick = async () => {
-          try {
-            await Auth.reset((f.querySelector('#aEmail') as any).value);
-            msg('Reset email sent — check your inbox.', true);
-          } catch (e: any) { msg(esc(e.message || 'Failed to send')); }
         };
       }
     };
     draw();
   },
   async friends(v: HTMLElement) {
-    v.innerHTML = '<h2>👥 Friends</h2><div class="card" id="frBox"><div class="muted">Loading…</div></div>';
+    const uid = Auth.user ? Auth.user.uid : 'local';
+    const playerCode = '#HUSHPLAYER_' + String(uid).slice(-4).toUpperCase();
+    v.innerHTML = '<h2>&#128101; Friends &amp; Challenges</h2>'
+      + '<button class="btn btn-silver" id="frLobby">&#127918; Multiplayer Rooms</button>'
+      + '<div class="card pc-card"><div class="pc-label">YOUR PLAYER CODE</div><div class="pc-code">' + esc(playerCode) + '</div>'
+      + '<button class="btn small secondary" id="pcCopy">Copy</button></div>'
+      + '<div class="card" id="frBox"><div class="muted">Loading…</div></div>';
+    (v.querySelector('#frLobby') as HTMLElement).onclick = () => { Sound.click(); openLobbyModal(); };
+    (v.querySelector('#pcCopy') as HTMLElement).onclick = async () => {
+      Sound.click();
+      try { await navigator.clipboard.writeText(playerCode); toast('Player code copied'); }
+      catch (e) { toast('Copy failed &mdash; long-press to copy'); }
+    };
     const box = $('#frBox') as HTMLElement;
     if (Backend.mode !== 'firebase' || !Auth.user || Auth.user.uid === 'local') {
-      box.innerHTML = '<div class="muted">Friends need a Firebase account.<br><br>Go to <b>Profile → Setup</b>, paste your Firebase keys, then log in.</div>';
+      box.innerHTML = '<div class="muted">Friends need a Firebase account.<br><br>Go to <b>Profile &rarr; Setup</b>, paste your Firebase keys, then log in.</div>';
       return;
     }
     const reqs = await Friends.requests();
     const list = await Friends.list();
-    let h = '<label>Add friend by username</label><div class="row"><input id="fq" class="grow" placeholder="Username" maxlength="16"><button class="btn small" id="fadd">Add</button></div>';
+    let h = '<div class="pc-label" style="margin-bottom:6px">ADD FRIEND BY USERNAME OR PLAYER CODE</div><div class="row"><input id="fq" class="grow" placeholder="Username or #HUSHPLAYER_xxxx" maxlength="24"><button class="btn small btn-silver" id="fadd">Send Request</button></div>';
     if (reqs.length) {
       h += '<h3>Requests (' + reqs.length + ')</h3>';
       for (const r of reqs) {
@@ -1059,7 +1217,7 @@ const UI = {
           + '<button class="btn small secondary" data-dec="' + r.uid + '">Decline</button></div>';
       }
     }
-    h += '<h3>Your friends (' + list.length + ')</h3>';
+    h += '<h3>YOUR FRIENDS (' + list.length + ')</h3>';
     if (!list.length) h += '<div class="muted">No friends yet — add someone above.</div>';
     for (const f of list) {
       h += '<div class="row" style="align-items:center">'
@@ -1069,7 +1227,7 @@ const UI = {
     }
     box.innerHTML = h;
     (box.querySelector('#fadd') as HTMLElement).onclick = async () => {
-      const q = (box.querySelector('#fq') as any).value;
+      let q = (box.querySelector('#fq') as any).value.trim().replace(/^#/, '').replace(/^HUSHPLAYER_/i, '');
       const u = await Friends.findUser(q);
       if (!u) { toast('User not found'); return; }
       if (u.uid === Auth.user.uid) { toast("That's you!"); return; }
@@ -1081,22 +1239,111 @@ const UI = {
     box.querySelectorAll('[data-rm]').forEach((b: any) => b.onclick = async () => {
       if (confirm('Remove this friend?')) { await Friends.remove(b.dataset.rm); UI.go('friends'); }
     });
-  }
+  },
 };
 
-document.querySelectorAll('#bottomNav button').forEach((b: any) => b.onclick = () => {
+/* ================= online multiplayer lobby modal ================= */
+async function openLobbyModal() {
   Sound.click();
-  // Gate: firebase mode requires login before using the hub
-  if (Backend.mode === 'firebase' && (!Auth.user || Auth.user.uid === 'local') && b.dataset.v !== 'auth' && b.dataset.v !== 'profile') {
+  const gameIds = Object.keys(GAMES);
+  let selGame = (UI.curGame && GAMES[UI.curGame]) ? UI.curGame : gameIds[0];
+  const seatsOpts = (id: string) => {
+    const [pmin, pmax] = GAMES[id].p;
+    return Array.from({ length: pmax - pmin + 1 }, (_, i) => '<option value="' + (pmin + i) + '">' + (pmin + i) + ' players</option>').join('');
+  };
+  const m = modal('<div class="lobby-modal">'
+    + '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:4px"><h3 style="margin:0">&#128101; Online Multiplayer Lobby</h3>'
+    + '<button class="iconbtn" id="lmClose" style="padding:4px 8px;font-size:16px" title="Close">✕</button></div>'
+    + (!Backend.configured() ? '<div class="card" style="background:var(--bg2);margin-top:8px"><div class="muted">Online rooms need Firebase: go to <b>Profile &rarr; Setup</b>, paste your keys, then log in.</div></div>' : '')
+    + '<div class="muted" style="font-size:11px;font-weight:800;letter-spacing:1px;margin:10px 0 6px">SELECT GAME</div>'
+    + '<div class="game-pills">' + gameIds.map(id => '<button class="game-pill' + (id === selGame ? ' active' : '') + '" data-gp="' + id + '" title="' + esc(GAMES[id].name) + '">' + GAMES[id].icon + '</button>').join('') + '</div>'
+    + '<div id="lmGameName" style="text-align:center;font-weight:800;color:var(--gold2);margin:6px 0">' + esc(GAMES[selGame].name) + '</div>'
+    + '<label>Players</label><select id="lmSeats">' + seatsOpts(selGame) + '</select>'
+    + '<button class="btn btn-silver" id="lmCreate">&#65291; Create ' + esc(GAMES[selGame].name) + ' Room</button>'
+    + '<div class="or-divider"><span>OR</span></div>'
+    + '<div class="pc-label" style="margin-bottom:6px">JOIN WITH 4-DIGIT ROOM CODE</div>'
+    + '<div class="row"><input id="lmCode" class="grow" inputmode="numeric" maxlength="4" placeholder="1234"><button class="btn small btn-silver" id="lmJoin">Join Room</button></div>'
+    + '<div class="muted" style="font-size:11px;font-weight:800;letter-spacing:1px;margin:12px 0 6px">LIVE OPEN ROOMS</div>'
+    + '<div id="lmRooms"><div class="muted">Loading…</div></div>'
+    + '<button class="btn small secondary" id="lmRefresh" style="margin-top:6px">&#8635; Refresh</button>'
+    + '</div>');
+  const lmClose = m.querySelector('#lmClose') as HTMLElement;
+  if (lmClose) lmClose.onclick = () => { Sound.click(); closeModal(); };
+  const refreshSel = () => {
+    (m.querySelector('#lmGameName') as HTMLElement).textContent = GAMES[selGame].name;
+    (m.querySelector('#lmSeats') as HTMLElement).innerHTML = seatsOpts(selGame);
+    (m.querySelector('#lmCreate') as HTMLElement).innerHTML = '＋ Create ' + esc(GAMES[selGame].name) + ' Room';
+  };
+  m.querySelectorAll('[data-gp]').forEach((b: any) => b.onclick = () => {
+    Sound.click();
+    selGame = b.dataset.gp;
+    m.querySelectorAll('[data-gp]').forEach((x: any) => x.classList.toggle('active', x === b));
+    refreshSel();
+  });
+  (m.querySelector('#lmCreate') as HTMLElement).onclick = async () => {
+    const seats = parseInt((m.querySelector('#lmSeats') as any).value);
+    const code = await Net.create(selGame, seats);
+    if (code) { closeModal(); UI.curGame = selGame; watchRoom(selGame); }
+  };
+  (m.querySelector('#lmJoin') as HTMLElement).onclick = async () => {
+    const code = (m.querySelector('#lmCode') as any).value;
+    const c = await Net.join(code);
+    if (c && Net.room) { closeModal(); UI.curGame = Net.room.game; watchRoom(Net.room.game); }
+  };
+  const loadRooms = async () => {
+    const box = m.querySelector('#lmRooms') as HTMLElement;
+    if (!box) return;
+    if (Backend.mode !== 'firebase') { box.innerHTML = '<div class="muted">No live rooms in demo mode.</div>'; return; }
+    try {
+      const s = await Backend.db.ref('bgh_rooms').get();
+      const rooms: any[] = [];
+      s.forEach((c: any) => { const r = c.val(); if (r && r.status === 'waiting') rooms.push(r); });
+      if (!rooms.length) { box.innerHTML = '<div class="muted">No open rooms right now &mdash; create one!</div>'; return; }
+      box.innerHTML = rooms.map(r => {
+        const g = GAMES[r.game];
+        const hostName = (r.names && r.names[r.host]) || 'Host';
+        return '<div class="room-row"><div class="room-ic">' + (g ? g.icon : '&#127922;') + '</div>'
+          + '<div class="grow"><div class="room-name">' + esc(g ? g.name : 'Game') + ' <span class="room-code">#' + esc(r.code) + '</span></div>'
+          + '<div class="muted" style="font-size:12px">' + esc(hostName) + ' &middot; ' + r.seats.length + '/' + r.seatsNeeded + ' seats</div></div>'
+          + '<button class="btn small btn-silver" data-join="' + esc(r.code) + '">Join</button></div>';
+      }).join('');
+      box.querySelectorAll('[data-join]').forEach((b: any) => b.onclick = async () => {
+        Sound.click();
+        const c = await Net.join(b.dataset.join);
+        if (c && Net.room) { closeModal(); UI.curGame = Net.room.game; watchRoom(Net.room.game); }
+      });
+    } catch (e) {
+      box.innerHTML = '<div class="err">Could not load rooms.</div>';
+    }
+  };
+  (m.querySelector('#lmRefresh') as HTMLElement).onclick = () => { Sound.click(); loadRooms(); };
+  loadRooms();
+}
+
+function navGo(v: string) {
+  Sound.click();
+  const guest = localStorage.getItem('bgh_guest') === '1';
+  // Gate: firebase mode requires login before using the hub (local guests exempt)
+  if (Backend.mode === 'firebase' && (!Auth.user || (Auth.user.uid === 'local' && !guest)) && v !== 'auth' && v !== 'profile') {
     UI.go('auth');
     return;
   }
   if (UI.view === 'play') {
-    promptQuitGame(() => UI.go(b.dataset.v));
+    promptQuitGame(() => UI.go(v));
     return;
   }
-  UI.go(b.dataset.v);
-});
+  UI.go(v);
+}
+
+document.querySelectorAll('#bottomNav button').forEach((b: any) => b.onclick = () => navGo(b.dataset.v));
+
+const lobbyBtn = $('#lobbyBtn');
+if (lobbyBtn) lobbyBtn.onclick = () => {
+  if (UI.view === 'play') promptQuitGame(() => openLobbyModal());
+  else openLobbyModal();
+};
+const friendsHdrBtn = $('#friendsHdrBtn');
+if (friendsHdrBtn) friendsHdrBtn.onclick = () => navGo('friends');
 
 /* ================= game context ================= */
 function makeCtx(gameId: string, mode: string, names: string[], extra?: any) {
