@@ -5405,3 +5405,6 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   transform: scale(1.02);
 }
 
+
+.hm-logo{display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:50%; background:radial-gradient(circle at 35% 35%, #e8e8ec, #9a9aa2 70%, #6e6e76); color:#17171c; font-size:7px; font-weight:900; line-height:1.1; text-align:center; vertical-align:middle; margin-right:8px; border:2px solid #e8e8ec; box-shadow:0 0 8px rgba(192,192,198,.4);}
+header .logo{display:flex; align-items:center; color:#e8e8ec;}
