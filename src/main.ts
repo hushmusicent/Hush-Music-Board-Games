@@ -714,14 +714,17 @@ const UI = {
       return;
     }
     const ref = Backend.db.ref('bgh_chat').limitToLast(30);
-    ref.on('child_added', (s: any) => {
+    if ((window as any)._chatOff) { try { (window as any)._chatOff(); } catch (e) {} }
+    const h = (s: any) => {
       const m = s.val();
       const d = document.createElement('div');
       d.className = 'msg';
       d.innerHTML = '<span class="who">' + esc(m.w) + '</span> ' + esc(m.t);
       log.appendChild(d);
       log.scrollTop = log.scrollHeight;
-    });
+    };
+    ref.on('child_added', h);
+    (window as any)._chatOff = () => ref.off('child_added', h);
     const send = () => {
       const t = $('#chatIn').value.trim();
       if (!t) return;
@@ -781,6 +784,7 @@ function makeCtx(gameId: string, mode: string, names: string[], extra?: any) {
       this._remote = fn;
     },
     rerender() {
+      if ((window as any)._C !== this) return;
       GAMES[this.gameId].render($('#view'), this);
     },
     finish(winner: number, msg?: string) {
@@ -865,12 +869,12 @@ function promptQuitGame(onConfirm?: () => void) {
   if (yesBtn) {
     yesBtn.onclick = () => {
       Sound.click();
-      const currentGame = (window._C && window._C.gameId) || UI.curGame;
       if (window._C) {
         const C = window._C;
         if (C._pvTimer) { clearInterval(C._pvTimer); C._pvTimer = null; }
         if (C._gTimer) { clearInterval(C._gTimer); C._gTimer = null; }
         if (C._timer) { clearInterval(C._timer); C._timer = null; }
+        if ((C as any)._stepTimer) { clearInterval((C as any)._stepTimer); (C as any)._stepTimer = null; }
         if (C.isNet) Net.leave(true);
         C._cover = false;
       }
@@ -879,9 +883,6 @@ function promptQuitGame(onConfirm?: () => void) {
       closeModal();
       if (onConfirm) {
         onConfirm();
-      } else if (currentGame) {
-        UI.curGame = currentGame;
-        UI.go('game');
       } else {
         UI.go('home');
       }
@@ -3041,7 +3042,8 @@ stdInit('candyland', {
     }
 
     const stepDelay = Math.min(220, Math.max(90, 750 / Math.max(1, stepCount)));
-    const stepInterval = setInterval(() => {
+    if (C._stepTimer) clearInterval(C._stepTimer);
+    const stepInterval = C._stepTimer = setInterval(() => {
       if (currentStep !== nextPos) {
         currentStep += stepDirection;
         S.pos[curPlayer] = currentStep;
@@ -3049,6 +3051,7 @@ stdInit('candyland', {
         g.renderPawnsOnly($('#view'), C);
       } else {
         clearInterval(stepInterval);
+        C._stepTimer = null;
         S.animating = false;
         S.drawing = false;
         S.targetSq = null;
@@ -11022,7 +11025,7 @@ stdInit('pictionary', {
   },
   renderPVC(R: HTMLElement, C: any) {
     const S = C.S, g = this;
-    if (S.round > 5) return;
+    if (S.round > 5) { if (!S.over) { S.over = true; C.finish((S.score || 0) >= 3 ? 0 : 1, 'You guessed ' + (S.score || 0) + '/5'); } return; }
 
     const curLvlNum = S.level || Math.max(1, Math.min(20, +(localStorage.getItem('pictionary_level') || '1')));
     if (!S.level) S.level = curLvlNum;
@@ -11180,6 +11183,7 @@ stdInit('pictionary', {
           cur = null;
           if (C.isNet) Net.inboxSend({ to: 1 - me, type: 'strokes', strokes: C.strokes, round: S.round });
         };
+        cv.onpointercancel = () => { cur = null; };
         $('#clrBtn').onclick = () => { C.strokes = []; drawStrokes(cv, []); };
         $('#doneBtn').onclick = () => {
           if (C.isNet) Net.inboxSend({ to: 1 - me, type: 'strokes', strokes: C.strokes, round: S.round, final: true });
