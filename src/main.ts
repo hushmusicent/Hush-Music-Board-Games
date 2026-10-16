@@ -15,11 +15,11 @@ declare global {
 }
 
 /* ================= CONFIG =================
-   Paste your free Firebase keys (Profile → Setup) for online PvP.
-   The SAME keys from your other game hub work here.
+   Firebase keys are baked in below, so online PvP works for every player
+   with no setup. A manually pasted config (Profile → Setup) overrides them.
    Demo mode (this device only) works without keys. */
 const CONFIG = {
-  firebase: { apiKey: "", authDomain: "", databaseURL: "", projectId: "", appId: "" },
+  firebase: { apiKey: "AIzaSyAhT_oPTtMTlUvHaSOf7zWvnUwTGyJf4sk", authDomain: "project-556676b3-bbce-4e02-8ce.firebaseapp.com", databaseURL: "https://project-556676b3-bbce-4e02-8ce-default-rtdb.firebaseio.com", projectId: "project-556676b3-bbce-4e02-8ce", appId: "1:1043689485585:web:a96258740de6856c5f88b0" },
   livekit: { url: "", apiKey: "", apiSecret: "" }
 };
 try {
