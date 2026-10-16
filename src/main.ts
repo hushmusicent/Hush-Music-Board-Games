@@ -71,6 +71,18 @@ function toast(t: string) {
   v.prepend(d);
   setTimeout(() => d.remove(), 3500);
 }
+// Lenient config parsing: accepts pure JSON or the JS snippet Firebase shows
+// (e.g. `const firebaseConfig = { apiKey: "...", ... };`).
+function parseLooseJson(s: string): any {
+  let t = s.trim();
+  t = t.replace(/^(?:const|var|let)?\s*(?:[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*)?/, '');
+  t = t.replace(/;\s*$/, '').trim();
+  try { return JSON.parse(t); } catch (_) { /* fall through to JS-object fixup */ }
+  const q = t
+    .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3')
+    .replace(/'([^']*)'/g, '"$1"');
+  return JSON.parse(q);
+}
 function loadScript(src: string): Promise<void> {
   return new Promise((res, rej) => {
     if (document.querySelector('script[src="' + src + '"]')) return res();
@@ -905,7 +917,7 @@ const UI = {
       + '<div class="card"><h3>&#9888; System &amp; Cloud Integration</h3>'
       + '<div class="sys-row"><span>Firebase Database</span><span class="' + (fb ? 'pill-connected' : 'pill-off') + '">' + (fb ? 'Connected' : 'Not connected') + '</span></div>'
       + '<div class="sys-row"><span>In-Game Voice Talk</span><span class="' + (Voice.configured() ? 'pill-connected' : 'pill-off') + '">' + (Voice.configured() ? 'Connected' : 'No keys') + '</span></div></div>'
-      + (!fb ? '<div class="card"><h3>&#128273; Setup &mdash; free online PvP</h3><div class="muted">Same Firebase project as your other hub works here.<br>1. console.firebase.google.com &rarr; project &rarr; &#9881; &rarr; <i>Your apps</i> &rarr; Web &rarr; copy <b>firebaseConfig</b>.<br>2. Paste it below &rarr; Save &rarr; reload.<br>3. For voice chat: <b>cloud.livekit.io</b> &rarr; free account &rarr; create project &rarr; paste URL + API key + secret below.</div><textarea id="fbCfg" rows="6" placeholder=\'{"apiKey":"…","authDomain":"…","databaseURL":"…","projectId":"…","appId":"…"}\'></textarea><button class="btn btn-silver" id="saveFb">Save keys &amp; reload</button>'
+      + (!fb ? '<div class="card"><h3>&#128273; Setup &mdash; free online PvP</h3><div class="muted">Same Firebase project as your other hub works here.<br>1. console.firebase.google.com &rarr; project &rarr; &#9881; &rarr; <i>Your apps</i> &rarr; Web &rarr; copy <b>firebaseConfig</b>.<br>2. Paste it below &rarr; Save &rarr; reload.<br>3. For voice chat: <b>cloud.livekit.io</b> &rarr; free account &rarr; create project &rarr; paste URL + API key + secret below.</div><textarea id="fbCfg" rows="6" placeholder=\'Paste firebaseConfig as JSON or JS (const firebaseConfig = {...});\'></textarea><button class="btn btn-silver" id="saveFb">Save keys &amp; reload</button>'
         + '<label style="margin-top:12px">LiveKit (voice chat) &mdash; optional</label><textarea id="lkCfg" rows="3" placeholder=\'{"url":"wss://…","apiKey":"…","apiSecret":"…"}\'></textarea><button class="btn secondary" id="saveLk">Save voice keys &amp; reload</button>'
         + '<label style="margin-top:12px">Display name (demo mode)</label><input id="nmIn" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="nmBtn">Save name</button></div>' : '')
       + '<button class="btn secondary" id="loBtn">Log out</button>'
@@ -920,21 +932,21 @@ const UI = {
     const s = $('#saveFb');
     if (s) s.onclick = () => {
       try {
-        const j = JSON.parse(($('#fbCfg') as any).value);
+        const j = parseLooseJson((($('#fbCfg') as any).value || '') as string);
         localStorage.setItem('bgh_fbcfg', JSON.stringify(j));
         location.reload();
       } catch (e) {
-        toast('That is not valid JSON');
+        toast('That is not valid JSON or JS config');
       }
     };
     const lk = $('#saveLk');
     if (lk) lk.onclick = () => {
       try {
-        const j = JSON.parse(($('#lkCfg') as any).value);
+        const j = parseLooseJson((($('#lkCfg') as any).value || '') as string);
         localStorage.setItem('bgh_lkcfg', JSON.stringify(j));
         location.reload();
       } catch (e) {
-        toast('That is not valid JSON');
+        toast('That is not valid JSON or JS config');
       }
     };
     const nb = $('#nmBtn');
