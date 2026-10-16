@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Board Game Hub — PvP + PvC</title>
+    <meta name="description" content="15 classic board games. Play vs Computer, Pass &amp; Play, or Online PvP with room codes." />
+    <meta property="og:title" content="Board Game Hub — PvP + PvC" />
+    <meta property="og:description" content="15 classic board games. Play vs Computer, Pass &amp; Play, or Online PvP with room codes." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <header>
+      <button class="iconbtn quit-game-btn hidden" id="headerQuitBtn" title="Quit current game" style="font-size:13px; font-weight:700; padding:6px 10px; color:#e74c3c;">✕ Quit</button>
+      <div class="logo">🎲 Board Game Hub</div>
+      <div class="pill gold" id="pointsPill">⭐ 0</div>
+      <button class="iconbtn" id="soundBtn" title="Mute">🔊</button>
+    </header>
+    <main id="view"></main>
+    <nav class="bottom" id="bottomNav">
+      <button data-v="home" class="active"><span class="e">🏠</span>Games</button>
+      <button data-v="chat"><span class="e">💬</span>Chat</button>
+      <button data-v="leaderboard"><span class="e">🏆</span>Top 50</button>
+      <button data-v="profile"><span class="e">👤</span>Profile</button>
+    </nav>
+    <div id="modalRoot"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg width="400" height="400" version="1.1" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+ <metadata>
+  <rdf:RDF>
+   <cc:Work rdf:about="">
+    <dc:format>image/svg+xml</dc:format>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:title/>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <g transform="translate(0 -722.52)">
+  <rect x="2.5" y="725.02" width="395" height="395" rx="10" ry="10" fill="#ddd" stroke="#000" stroke-linecap="round" stroke-width="5"/>
+ </g>
+ <g fill="none" stroke-width="40">
+  <path d="m360 200v66.274s0 35.147-29.289 64.436-64.437 29.289-64.437 29.289l-66.274-1e-5" stroke="#f44"/>
+  <path d="m200 360h-66.274s-35.147 0-64.436-29.289-29.289-64.437-29.289-64.437v-66.274" stroke="#4b4"/>
+  <path d="m40 200v-66.274s0-35.147 29.289-64.436 64.437-29.289 64.437-29.289h66.274" stroke="#dd0"/>
+  <path d="m200 40h66.274s35.147 0 64.436 29.289 29.289 64.437 29.289 64.437v66.274" stroke="#48d"/>
+  <path d="M 180,180 60,60" stroke="#dd0"/>
+  <path d="m220 220 120 120" stroke="#f44"/>
+  <path d="m220 180 120-120" stroke="#48d"/>
+  <path d="m180 220-120 120" stroke="#4b4"/>
+ </g>
+ <g stroke="#000" stroke-linecap="round">
+  <g fill="#ddd" fill-opacity=".53333">
+   <circle cx="306.07" cy="93.934" r="10" stroke-width="5"/>
+   <g stroke-width="3">
+    <circle cx="316.16" cy="342.79" r="18"/>
+    <circle cx="57.214" cy="316.16" r="18"/>
+    <circle cx="342.79" cy="83.844" r="18"/>
+    <circle cx="83.844" cy="57.214" r="18"/>
+   </g>
+  </g>
+  <rect transform="rotate(-45 -872.16 -361.26)" x="-550.9" y="753.74" width="80" height="80" rx="10" ry="10" fill="#aaa" stroke-width="5"/>
+  <g fill="#ddd" stroke-width="5">
+   <g>
+    <circle cx="200" cy="200" r="30"/>
+    <circle cx="360" cy="200" r="10"/>
+    <circle cx="200" cy="40" r="10"/>
+    <circle cx="40" cy="200" r="10"/>
+    <circle cx="200" cy="360" r="10"/>
+    <circle cx="360" cy="243.71" r="10"/>
+    <circle cx="357.88" cy="281.61" r="10"/>
+    <circle cx="342.79" cy="316.16" r="10"/>
+    <circle cx="316.16" cy="342.79" r="10"/>
+    <circle cx="281.61" cy="357.88" r="10"/>
+    <circle cx="243.71" cy="360" r="10"/>
+    <circle cx="156.29" cy="360" r="10"/>
+    <circle cx="118.39" cy="357.88" r="10"/>
+    <circle cx="83.844" cy="342.79" r="10"/>
+    <circle cx="57.214" cy="316.16" r="10"/>
+    <circle cx="360" cy="156.29" r="10"/>
+    <circle cx="357.88" cy="118.39" r="10"/>
+    <circle cx="342.79" cy="83.844" r="10"/>
+    <circle cx="316.16" cy="57.214" r="10"/>
+    <circle cx="281.61" cy="42.118" r="10"/>
+    <circle cx="243.71" cy="40" r="10"/>
+    <circle cx="156.29" cy="40" r="10"/>
+    <circle cx="119.25" cy="40.741" r="10"/>
+    <circle cx="83.844" cy="57.214" r="10"/>
+    <circle cx="57.214" cy="83.844" r="10"/>
+    <circle cx="40" cy="156.29" r="10"/>
+    <circle cx="40" cy="243.71" r="10"/>
+    <circle cx="42.118" cy="118.39" r="10"/>
+    <circle cx="42.118" cy="281.61" r="10"/>
+   </g>
+   <g fill-opacity=".53333">
+    <circle cx="284.85" cy="115.15" r="10"/>
+    <circle cx="263.64" cy="136.36" r="10"/>
+    <circle cx="242.43" cy="157.57" r="10"/>
+    <circle cx="157.57" cy="242.43" r="10"/>
+    <circle cx="136.36" cy="263.64" r="10"/>
+    <circle cx="115.15" cy="284.85" r="10"/>
+    <circle cx="93.934" cy="306.07" r="10"/>
+    <circle cx="242.43" cy="242.43" r="10"/>
+    <circle cx="263.64" cy="263.64" r="10"/>
+    <circle cx="284.85" cy="284.85" r="10"/>
+    <circle cx="306.07" cy="306.07" r="10"/>
+    <circle cx="157.57" cy="157.57" r="10"/>
+    <circle cx="136.36" cy="136.36" r="10"/>
+    <circle cx="115.15" cy="115.15" r="10"/>
+    <circle cx="93.934" cy="93.934" r="10"/>
+   </g>
+  </g>
+  <g fill="#dd0" stroke-width="5">
+   <circle cx="63.029" cy="21.495" r="10"/>
+   <circle cx="46.192" cy="35.781" r="10"/>
+   <circle cx="30.836" cy="51.647" r="10"/>
+   <circle cx="17.11" cy="68.942" r="10"/>
+  </g>
+  <g fill="#4b4" stroke-width="5">
+   <circle cx="17.11" cy="331.06" r="10"/>
+   <circle cx="30.836" cy="348.35" r="10"/>
+   <circle cx="46.192" cy="364.22" r="10"/>
+   <circle cx="63.029" cy="378.5" r="10"/>
+  </g>
+  <g fill="#f44" stroke-width="5">
+   <circle cx="336.97" cy="378.5" r="10"/>
+   <circle cx="353.81" cy="364.22" r="10"/>
+   <circle cx="369.16" cy="348.35" r="10"/>
+   <circle cx="382.89" cy="331.06" r="10"/>
+  </g>
+  <g fill="#48d" stroke-width="5">
+   <circle cx="382.89" cy="68.942" r="10"/>
+   <circle cx="369.16" cy="51.647" r="10"/>
+   <circle cx="353.81" cy="35.781" r="10"/>
+   <circle cx="336.97" cy="21.495" r="10"/>
+  </g>
+ </g>
+</svg>
