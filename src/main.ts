@@ -788,6 +788,7 @@ function makeCtx(gameId: string, mode: string, names: string[], extra?: any) {
       GAMES[this.gameId].render($('#view'), this);
     },
     finish(winner: number, msg?: string) {
+      if ((window as any)._C !== this) return;
       this.S.over = true;
       const g = GAMES[this.gameId];
       let pts = 0;
@@ -11134,7 +11135,7 @@ stdInit('pictionary', {
   },
   renderDuel(R: HTMLElement, C: any) {
     const S = C.S, g = this;
-    if (S.round > 4) return;
+    if (S.round > 4) { if (!S.over) { S.over = true; const w = S.scores[0] === S.scores[1] ? -1 : (S.scores[0] > S.scores[1] ? 0 : 1); C.finish(w, 'Scores: ' + C.seatName(0) + ' ' + S.scores[0] + ' · ' + C.seatName(1) + ' ' + S.scores[1]); } return; }
     const me = C.isNet ? Net.mySeat() : 0;
     const drawer = S.drawer;
     const iAmDrawer = C.isNet ? me === drawer : true;
