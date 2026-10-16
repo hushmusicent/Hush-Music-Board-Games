@@ -233,17 +233,17 @@ const Auth = {
       Points.balance = d.points != null ? d.points : START_POINTS;
       Points.wins = d.wins || 0;
       Points.lastDaily = d.lastDaily || 0;
+      Points.perGame = d.perGame || {};
       if (d.username) this.user.username = d.username;
       else await Backend.db.ref('bgh_users/' + this.user.uid).update({ username: this.user.username });
       if (d.photo) this.user.photo = d.photo;
-      Points.checkDaily();
     } catch (e) {}
   },
   _pullLocal() {
     Points.balance = parseInt(localStorage.getItem('bgh_points') || String(START_POINTS));
     Points.wins = parseInt(localStorage.getItem('bgh_wins') || '0');
     Points.lastDaily = parseInt(localStorage.getItem('bgh_daily') || '0');
-    Points.checkDaily();
+    try { Points.perGame = JSON.parse(localStorage.getItem('bgh_pergame') || '{}'); } catch (e) { Points.perGame = {}; }
   },
   async signup(email: string, pw: string, name: string) {
     name = name.trim();
@@ -259,6 +259,7 @@ const Auth = {
     m['bgh_usernames/' + name.toLowerCase()] = this.user.uid;
     await Backend.db.ref().update(m);
     Points.balance = START_POINTS;
+    Points.perGame = {};
   },
   async login(email: string, pw: string) {
     await Backend.auth.signInWithEmailAndPassword(email, pw);
@@ -308,6 +309,7 @@ const Points = {
   balance: START_POINTS,
   wins: 0,
   lastDaily: 0,
+  perGame: {} as Record<string, { w: number; l: number; t: number }>,
   checkDaily() {
     const day = Math.floor(Date.now() / 864e5);
     if (this.lastDaily !== day) {
@@ -323,11 +325,12 @@ const Points = {
   },
   save() {
     if (Backend.mode === 'firebase' && Auth.user) {
-      Backend.db.ref('bgh_users/' + Auth.user.uid).update({ points: this.balance, wins: this.wins, lastDaily: this.lastDaily }).catch(() => {});
+      Backend.db.ref('bgh_users/' + Auth.user.uid).update({ points: this.balance, wins: this.wins, lastDaily: this.lastDaily, perGame: this.perGame }).catch(() => {});
     } else {
       localStorage.setItem('bgh_points', String(this.balance));
       localStorage.setItem('bgh_wins', String(this.wins));
       localStorage.setItem('bgh_daily', String(this.lastDaily));
+      localStorage.setItem('bgh_pergame', JSON.stringify(this.perGame));
     }
     UI.refresh();
   }
@@ -643,7 +646,7 @@ const UI = {
       + '<div class="hg-grid">' + cards + '</div>';
     const claimDaily = () => {
       const day = Math.floor(Date.now() / 864e5);
-      if (Points.lastDaily === day) { toast('Daily bonus already claimed &mdash; come back tomorrow!'); return; }
+      if (Points.lastDaily === day) { toast('Daily bonus already claimed — come back tomorrow!'); return; }
       Points.checkDaily();
     };
     (v.querySelector('#dailyBtn') as HTMLElement).onclick = () => { Sound.click(); claimDaily(); };
@@ -882,7 +885,13 @@ const UI = {
     const photo = Auth.user && Auth.user.photo
       ? '<img src="' + Auth.user.photo + '" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">'
       : '<div style="width:80px;height:80px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:36px;border:2px solid var(--line)">👤</div>';
-    const breakdown = Object.keys(GAMES).map(id => '<div class="bd-cell"><div class="bd-icon">' + GAMES[id].icon + '</div><div class="bd-name">' + esc(GAMES[id].name) + '</div><div class="bd-mark' + (Points.wins > 0 ? ' won' : '') + '">' + (Points.wins > 0 ? '✓' : '&ndash;') + '</div></div>').join('');
+    const pgOf = (id: string) => Points.perGame[id] || { w: 0, l: 0, t: 0 };
+    const breakdown = Object.keys(GAMES).map(id => { const s = pgOf(id); return '<div class="bd-cell"><div class="bd-icon">' + GAMES[id].icon + '</div><div class="bd-name">' + esc(GAMES[id].name) + '</div><div class="bd-stats">W:' + s.w + ' L:' + s.l + ' T:' + s.t + '</div></div>'; }).join('');
+    let tw = 0, tl = 0, tt = 0;
+    Object.keys(Points.perGame).forEach(id => { const s = Points.perGame[id]; tw += s.w || 0; tl += s.l || 0; tt += s.t || 0; });
+    const tgames = tw + tl + tt;
+    const winRate = tgames ? Math.round(tw / tgames * 100) : 0;
+    const bdTotals = '<div class="bd-totals"><span>TOTAL&nbsp;W:' + tw + '</span><span>L:' + tl + '</span><span>T:' + tt + '</span><span>WIN&nbsp;RATE:' + winRate + '%</span></div>';
     v.innerHTML = '<h2>&#128100; Profile</h2>'
       + '<div class="card"><div class="row" style="align-items:center;gap:12px">' + photo
       + '<div style="flex:1"><h2 style="margin:0 0 2px">' + esc(Auth.user ? Auth.user.username : '…') + '</h2>'
@@ -892,21 +901,20 @@ const UI = {
       + '<div class="row" style="gap:10px"><div class="stat-box grow"><div class="stat-label">WALLET POINTS</div><div class="stat-val">&#11088; ' + Points.balance + '</div></div>'
       + '<div class="stat-box grow"><div class="stat-label">VICTORIES RECORDED</div><div class="stat-val">' + Points.wins + ' Wins</div></div></div>'
       + '<button class="btn btn-silver" id="profDaily">&#127873; CLAIM DAILY BONUS (+500 &#11088;)</button>'
-      + '<div class="card"><h3>&#127941; GAME VICTORIES BREAKDOWN</h3><div class="breakdown-grid">' + breakdown + '</div>'
-      + '<div class="muted" style="font-size:11px;margin-top:8px">Per-game victory tracking coming soon &mdash; totals shown above.</div></div>'
+      + '<div class="card"><h3>&#127941; GAME VICTORIES BREAKDOWN</h3><div class="breakdown-grid">' + breakdown + '</div>' + bdTotals + '</div>'
       + '<div class="card"><h3>&#9888; System &amp; Cloud Integration</h3>'
       + '<div class="sys-row"><span>Firebase Database</span><span class="' + (fb ? 'pill-connected' : 'pill-off') + '">' + (fb ? 'Connected' : 'Not connected') + '</span></div>'
       + '<div class="sys-row"><span>In-Game Voice Talk</span><span class="' + (Voice.configured() ? 'pill-connected' : 'pill-off') + '">' + (Voice.configured() ? 'Connected' : 'No keys') + '</span></div></div>'
       + (!fb ? '<div class="card"><h3>&#128273; Setup &mdash; free online PvP</h3><div class="muted">Same Firebase project as your other hub works here.<br>1. console.firebase.google.com &rarr; project &rarr; &#9881; &rarr; <i>Your apps</i> &rarr; Web &rarr; copy <b>firebaseConfig</b>.<br>2. Paste it below &rarr; Save &rarr; reload.<br>3. For voice chat: <b>cloud.livekit.io</b> &rarr; free account &rarr; create project &rarr; paste URL + API key + secret below.</div><textarea id="fbCfg" rows="6" placeholder=\'{"apiKey":"…","authDomain":"…","databaseURL":"…","projectId":"…","appId":"…"}\'></textarea><button class="btn btn-silver" id="saveFb">Save keys &amp; reload</button>'
         + '<label style="margin-top:12px">LiveKit (voice chat) &mdash; optional</label><textarea id="lkCfg" rows="3" placeholder=\'{"url":"wss://…","apiKey":"…","apiSecret":"…"}\'></textarea><button class="btn secondary" id="saveLk">Save voice keys &amp; reload</button>'
         + '<label style="margin-top:12px">Display name (demo mode)</label><input id="nmIn" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="nmBtn">Save name</button></div>' : '')
-      + (loggedIn ? '<button class="btn secondary" id="loBtn">Log out</button>' : '')
-      + (loggedIn ? '<div class="card" style="border-color:#e74c3c"><h3 style="color:#e74c3c">&#128465; Erase Account</h3><div class="muted" style="margin-bottom:8px">Permanently delete your profile, photo, points, friends and login. This cannot be undone.</div><button class="btn secondary" id="eraseBtn" style="border-color:#e74c3c;color:#e74c3c">&#128465; Erase my account</button></div>' : '');
+      + '<button class="btn secondary" id="loBtn">Log out</button>'
+      + '<div class="card" style="border-color:#e74c3c"><h3 style="color:#e74c3c">&#128465; Erase Account</h3><div class="muted" style="margin-bottom:8px">Permanently delete your profile, points, stats and friends. This cannot be undone.</div><button class="btn secondary" id="eraseBtn" style="border-color:#e74c3c;color:#e74c3c">&#128465; Erase my account</button></div>';
     const pd = $('#profDaily');
     if (pd) pd.onclick = () => {
       Sound.click();
       const day = Math.floor(Date.now() / 864e5);
-      if (Points.lastDaily === day) { toast('Daily bonus already claimed &mdash; come back tomorrow!'); return; }
+      if (Points.lastDaily === day) { toast('Daily bonus already claimed — come back tomorrow!'); return; }
       Points.checkDaily();
     };
     const s = $('#saveFb');
@@ -935,7 +943,11 @@ const UI = {
       location.reload();
     };
     const lo = $('#loBtn');
-    if (lo) lo.onclick = () => Auth.logout();
+    if (lo) lo.onclick = () => {
+      if (loggedIn) { Auth.logout(); return; }
+      ['bgh_points', 'bgh_wins', 'bgh_daily', 'bgh_pergame', 'bgh_guest', 'bgh_name'].forEach(k => localStorage.removeItem(k));
+      location.reload();
+    };
     const pb = $('#photoBtn');
     const pi = $('#photoIn') as any;
     if (pb && pi) {
@@ -975,11 +987,17 @@ const UI = {
         + '<button class="btn danger grow" id="eYes">Erase everything</button></div></div>');
       (m.querySelector('#eNo') as HTMLElement).onclick = () => closeModal();
       (m.querySelector('#eYes') as HTMLElement).onclick = async () => {
+        if (!loggedIn) {
+          ['bgh_points', 'bgh_wins', 'bgh_daily', 'bgh_pergame', 'bgh_guest', 'bgh_name'].forEach(k => localStorage.removeItem(k));
+          closeModal();
+          location.reload();
+          return;
+        }
         try {
           await Auth.eraseAccount();
         } catch (e: any) {
           closeModal();
-          toast(esc(e.message || 'Erase failed — try logging out and back in first'));
+          toast(e.message || 'Erase failed — try logging out and back in first');
         }
       };
     };
@@ -990,13 +1008,34 @@ const UI = {
     const rankPill = (n: string) => '<div style="text-align:center;margin-bottom:10px"><span class="lb-rank">Your Rank: #' + n + '</span></div>';
     const medal = (i: number) => i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : String(i + 1);
     const rowHtml = (r: any, i: number) => {
-      const me = r.username === Auth.user.username;
+      const me = r.me || r.username === Auth.user.username;
       const av = r.photo ? '<img src="' + r.photo + '" style="width:24px;height:24px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px">' : '';
-      return '<tr class="' + (me ? 'me' : '') + '"><td>' + medal(i) + '</td><td>' + av + esc(r.username || '?') + '</td><td>&#11088; ' + r.points + '</td><td>' + (r.wins || 0) + '</td></tr>';
+      const botTag = r.bot ? ' <span class="muted" style="font-size:10px">🤖</span>' : '';
+      return '<tr class="' + (me ? 'me' : '') + '"><td>' + medal(i) + '</td><td>' + av + esc(r.username || '?') + botTag + '</td><td>&#11088; ' + r.points + '</td><td>' + (r.wins || 0) + '</td></tr>';
     };
     const tableHead = '<table class="lb"><tr><th>#</th><th>Player</th><th>&#11088; Points</th><th>Total Wins</th></tr>';
     if (Backend.mode !== 'firebase') {
-      box.innerHTML = rankPill('1') + tableHead + rowHtml({ username: Auth.user.username, points: Points.balance, wins: Points.wins }, 0) + '</table><div class="muted">Demo mode &mdash; connect Firebase in Profile &rarr; Setup for the shared board.</div>';
+      const bots = [
+        { username: 'Bot_Master', points: 8420, wins: 41, bot: true },
+        { username: 'DiceKing', points: 7310, wins: 36, bot: true },
+        { username: 'CardShark', points: 6950, wins: 33, bot: true },
+        { username: 'BoardBoss', points: 6120, wins: 29, bot: true },
+        { username: 'LuckyRoller', points: 5480, wins: 25, bot: true },
+        { username: 'PawnStar', points: 4930, wins: 22, bot: true },
+        { username: 'TileTitan', points: 4410, wins: 19, bot: true },
+        { username: 'MeeplePro', points: 3870, wins: 16, bot: true },
+        { username: 'Checkmate99', points: 3350, wins: 14, bot: true },
+        { username: 'DominoDan', points: 2890, wins: 12, bot: true },
+        { username: 'RummyQueen', points: 2460, wins: 10, bot: true },
+        { username: 'SpadeAce', points: 1980, wins: 8, bot: true },
+        { username: 'ClueHunter', points: 1540, wins: 6, bot: true },
+        { username: 'MancalaMia', points: 1120, wins: 4, bot: true },
+        { username: 'NewbieBot', points: 620, wins: 2, bot: true },
+      ];
+      const demoRows: any[] = (bots as any[]).concat([{ username: Auth.user.username, points: Points.balance, wins: Points.wins, me: true }]);
+      demoRows.sort((a, b) => b.points - a.points);
+      const myRank = demoRows.findIndex(r => r.me);
+      box.innerHTML = rankPill(String(myRank + 1)) + tableHead + demoRows.map((r, i) => rowHtml(r, i)).join('') + '</table><div class="muted">Demo mode — connect Firebase in Profile → Setup for the shared board.</div>';
       return;
     }
     try {
@@ -1089,8 +1128,8 @@ const UI = {
           e.preventDefault();
           const id = ((f.querySelector('#aId') as any).value || '').trim();
           if (!id.includes('@')) { toast('Enter your email above first'); return; }
-          try { await Auth.reset(id); toast('Reset email sent &mdash; check your inbox.'); }
-          catch (er: any) { toast(esc(er.message || 'Failed to send reset email')); }
+          try { await Auth.reset(id); toast('Reset email sent — check your inbox.'); }
+          catch (er: any) { toast(er.message || 'Failed to send reset email'); }
         };
         (f.querySelector('#aGo') as HTMLElement).onclick = async () => {
           const id = ((f.querySelector('#aId') as any).value || '').trim();
@@ -1111,7 +1150,7 @@ const UI = {
         };
         (f.querySelector('#aGoogle') as HTMLElement).onclick = () => {
           Sound.click();
-          if (!Backend.configured()) toast('Demo mode &mdash; connect Firebase in Profile &rarr; Setup for real accounts.');
+          if (!Backend.configured()) toast('Demo mode — connect Firebase in Profile → Setup for real accounts.');
           else toast('Google sign-in coming soon.');
         };
         (f.querySelector('#aGuest') as HTMLElement).onclick = () => {
@@ -1155,7 +1194,7 @@ const UI = {
               cv.getContext('2d')!.drawImage(img, 0, 0, cv.width, cv.height);
               pendingPhoto = cv.toDataURL('image/jpeg', 0.8);
               refreshPrev();
-              toast('Photo ready &mdash; it uploads when you create your account.');
+              toast('Photo ready — it uploads when you create your account.');
             };
             img.src = rd.result as string;
           };
@@ -1199,7 +1238,7 @@ const UI = {
     (v.querySelector('#pcCopy') as HTMLElement).onclick = async () => {
       Sound.click();
       try { await navigator.clipboard.writeText(playerCode); toast('Player code copied'); }
-      catch (e) { toast('Copy failed &mdash; long-press to copy'); }
+      catch (e) { toast('Copy failed — long-press to copy'); }
     };
     const box = $('#frBox') as HTMLElement;
     if (Backend.mode !== 'firebase' || !Auth.user || Auth.user.uid === 'local') {
@@ -1390,13 +1429,19 @@ function makeCtx(gameId: string, mode: string, names: string[], extra?: any) {
       this.S.over = true;
       const g = GAMES[this.gameId];
       let pts = 0;
+      const pg = (Points.perGame[this.gameId] = Points.perGame[this.gameId] || { w: 0, l: 0, t: 0 });
       if (this.mode === 'pvc') {
         if (winner === 0) {
           pts = g.payout || 50;
           Points.add(pts);
           Points.wins++;
+          pg.w++;
           Sound.win();
+        } else if (winner === -1) {
+          pg.t++;
+          Sound.lose();
         } else {
+          pg.l++;
           Sound.lose();
         }
       } else if (this.isNet) {
@@ -1404,8 +1449,13 @@ function makeCtx(gameId: string, mode: string, names: string[], extra?: any) {
           pts = 100;
           Points.add(pts);
           Points.wins++;
+          pg.w++;
           Sound.win();
+        } else if (winner === -1) {
+          pg.t++;
+          Sound.lose();
         } else {
+          pg.l++;
           Sound.lose();
         }
       } else {
