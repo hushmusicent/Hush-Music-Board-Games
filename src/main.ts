@@ -199,25 +199,30 @@ if (micBtn) {
   micBtn.onclick = () => Voice.toggleMic();
 }
 
-// In-game voice join button (header) — created dynamically so the single-file
-// main.ts upload flow stays intact. Visible only during an online game when
-// voice isn't already active. The #micBtn handles mute once voice is on.
-const voiceHdrBtn = document.createElement('button');
-voiceHdrBtn.className = 'iconbtn hidden';
-voiceHdrBtn.id = 'voiceHdrBtn';
-voiceHdrBtn.title = 'Join voice chat';
-voiceHdrBtn.textContent = '🎤';
-{
+// In-game voice join button (header) — created lazily inside
+// updateVoiceHdrBtn() because the <header> element doesn't exist yet when
+// this script first runs. Visible only during an online game when voice
+// isn't already active. The #micBtn handles mute once voice is on.
+function ensureVoiceHdrBtn(): HTMLElement | null {
+  let b = document.getElementById('voiceHdrBtn') as HTMLElement;
+  if (b) return b;
   const hdr = document.querySelector('header');
-  const mic = $('#micBtn');
-  if (hdr && mic) hdr.insertBefore(voiceHdrBtn, mic);
-  else if (hdr) hdr.appendChild(voiceHdrBtn);
+  if (!hdr) return null;
+  b = document.createElement('button');
+  b.className = 'iconbtn hidden';
+  b.id = 'voiceHdrBtn';
+  b.title = 'Join voice chat';
+  b.textContent = '🎤';
+  b.onclick = async () => {
+    if (Net.room && Net.room.code) await Voice.join('bgh-' + Net.room.code);
+  };
+  const mic = document.getElementById('micBtn');
+  if (mic) hdr.insertBefore(b, mic);
+  else hdr.appendChild(b);
+  return b;
 }
-voiceHdrBtn.onclick = async () => {
-  if (Net.room && Net.room.code) await Voice.join('bgh-' + Net.room.code);
-};
 function updateVoiceHdrBtn() {
-  const b = $('#voiceHdrBtn') as HTMLElement;
+  const b = ensureVoiceHdrBtn();
   if (!b) return;
   const C = (window as any)._C;
   const show = !!(C && C.isNet && Net.room && Net.room.code && !Voice.active);
@@ -403,7 +408,6 @@ const Net = {
   },
   async create(game: string, seats: number) {
     if (!this.needNet()) return null;
-    this.leave(true);
     const code = String(ri(1000, 9999));
     const room = {
       code,
@@ -419,6 +423,7 @@ const Net = {
     };
     await Backend.db.ref('bgh_rooms/' + code).set(room);
     this.room = room;
+    try { localStorage.setItem('bgh_lastroom', code); } catch (e) {}
     this._listen(code);
     return code;
   },
@@ -435,7 +440,6 @@ const Net = {
       toast('Game already started');
       return null;
     }
-    this.leave(true);
     if (!room.seats.includes(Auth.user.uid)) {
       if (room.seats.length >= room.seatsNeeded) {
         toast('Room is full');
@@ -447,6 +451,27 @@ const Net = {
       await Backend.db.ref('bgh_rooms/' + code + '/names').set(room.names);
     }
     this.room = room;
+    try { localStorage.setItem('bgh_lastroom', code); } catch (e) {}
+    this._listen(code);
+    return code;
+  },
+  // Rejoin a room the player was booted from (works even if status is
+  // 'playing' — unlike join(), which only allows 'waiting' rooms).
+  async rejoin(code: string) {
+    if (!this.needNet()) return null;
+    code = String(code).trim();
+    const s = await Backend.db.ref('bgh_rooms/' + code).get();
+    if (!s.exists()) {
+      toast('Room not found');
+      return null;
+    }
+    const room = s.val();
+    if (!room.seats || !room.seats.includes(Auth.user.uid)) {
+      toast('You are not in this room');
+      return null;
+    }
+    this.room = room;
+    try { localStorage.setItem('bgh_lastroom', code); } catch (e) {}
     this._listen(code);
     return code;
   },
@@ -462,9 +487,7 @@ const Net = {
     return (this.room.names && this.room.names[u]) || 'Player ' + (i + 1);
   },
   _listen(code: string) {
-    this._off.forEach(f => { try { f(); } catch (e) {} });
-    this._off = [];
-    if (this._inboxOff) { try { this._inboxOff(); } catch (e) {} this._inboxOff = null; }
+    this.leave(true);
     const ref = Backend.db.ref('bgh_rooms/' + code);
     const h = (snap: any) => {
       const r = snap.val();
@@ -488,8 +511,16 @@ const Net = {
   onInbox(cb: (m: any) => void) { this._onInbox = cb; },
   async push(patch: any) {
     if (!this.room) return;
-    Object.assign(this.room, patch);
-    await Backend.db.ref('bgh_rooms/' + this.room.code).update(patch);
+    // Deep-clone the state so Net.room.state never shares a reference with
+    // the live game object C.S. Otherwise mutating C.S for the next move
+    // silently mutates Net.room.state too, and the _listen changed-check
+    // (JSON compare) sees no difference — the opponent never gets the update.
+    const safe: any = { ...patch };
+    if (safe.state !== undefined && safe.state !== null) {
+      safe.state = JSON.parse(JSON.stringify(safe.state));
+    }
+    Object.assign(this.room, safe);
+    await Backend.db.ref('bgh_rooms/' + this.room.code).update(safe);
   },
   async inboxSend(msg: any) {
     if (!this.room) return;
@@ -983,12 +1014,12 @@ const UI = {
     $('#mkRoom').onclick = async () => {
       const seats = parseInt(($('#seatN') as any).value);
       const code = await Net.create(UI.curGame!, seats);
-      if (code && Net.room) watchRoom(UI.curGame!);
+      if (code) watchRoom(UI.curGame!);
     };
     $('#jnRoom').onclick = async () => {
       const code = ($('#joinCode') as any).value;
       const c = await Net.join(code);
-      if (c && Net.room) watchRoom(UI.curGame || Net.room.game);
+      if (c) watchRoom(this.curGame!);
     };
   },
   profile(v: HTMLElement) {
@@ -1496,7 +1527,7 @@ async function openLobbyModal() {
   (m.querySelector('#lmCreate') as HTMLElement).onclick = async () => {
     const seats = parseInt((m.querySelector('#lmSeats') as any).value);
     const code = await Net.create(selGame, seats);
-    if (code && Net.room) { closeModal(); UI.curGame = selGame; watchRoom(selGame); }
+    if (code) { closeModal(); UI.curGame = selGame; watchRoom(selGame); }
   };
   (m.querySelector('#lmJoin') as HTMLElement).onclick = async () => {
     const code = (m.querySelector('#lmCode') as any).value;
@@ -1508,21 +1539,45 @@ async function openLobbyModal() {
     if (!box) return;
     if (Backend.mode !== 'firebase') { box.innerHTML = '<div class="muted">No live rooms in demo mode.</div>'; return; }
     try {
-      const s = await Backend.db.ref('bgh_rooms').get();
+      // Waiting rooms via indexed query (needs .indexOn: 'status' on bgh_rooms).
+      const s = await Backend.db.ref('bgh_rooms').orderByChild('status').equalTo('waiting').get();
       const rooms: any[] = [];
-      s.forEach((c: any) => { const r = c.val(); if (r && r.status === 'waiting') rooms.push(r); });
-      if (!rooms.length) { box.innerHTML = '<div class="muted">No open rooms right now &mdash; create one!</div>'; return; }
-      box.innerHTML = rooms.map(r => {
+      s.forEach((c: any) => { const r = c.val(); if (r) rooms.push(r); });
+      // "Your Room": the player may have been booted from a room that's now
+      // 'playing' — look it up directly via the last-room code so they can rejoin.
+      let myRoom: any = null;
+      try {
+        const lastCode = localStorage.getItem('bgh_lastroom');
+        if (lastCode) {
+          const ms = await Backend.db.ref('bgh_rooms/' + lastCode).get();
+          const mr = ms.val();
+          if (mr && mr.seats && mr.seats.includes(Auth.user.uid)) myRoom = mr;
+        }
+      } catch (e) {}
+      const others = myRoom ? rooms.filter(r => r.code !== myRoom.code) : rooms;
+      if (!others.length && !myRoom) { box.innerHTML = '<div class="muted">No open rooms right now — create one!</div>'; return; }
+      const rowHtml = (r: any, isMine: boolean) => {
         const g = GAMES[r.game];
         const hostName = (r.names && r.names[r.host]) || 'Host';
-        return '<div class="room-row"><div class="room-ic">' + (g ? g.icon : '&#127922;') + '</div>'
-          + '<div class="grow"><div class="room-name">' + esc(g ? g.name : 'Game') + ' <span class="room-code">#' + esc(r.code) + '</span></div>'
-          + '<div class="muted" style="font-size:12px">' + esc(hostName) + ' &middot; ' + r.seats.length + '/' + r.seatsNeeded + ' seats</div></div>'
-          + '<button class="btn small btn-silver" data-join="' + esc(r.code) + '">Join</button></div>';
-      }).join('');
+        const badge = isMine ? ' <span class="pill" style="background:var(--gold);color:#111;font-size:10px;padding:2px 8px;border-radius:99px;font-weight:800">YOUR ROOM</span>' : '';
+        const btn = isMine
+          ? '<button class="btn small btn-silver" data-rejoin="' + esc(r.code) + '">▶ Rejoin</button>'
+          : '<button class="btn small btn-silver" data-join="' + esc(r.code) + '">Join</button>';
+        return '<div class="room-row"><div class="room-ic">' + (g ? g.icon : '🎲') + '</div>'
+          + '<div class="grow"><div class="room-name">' + esc(g ? g.name : 'Game') + ' <span class="room-code">#' + esc(r.code) + '</span>' + badge + '</div>'
+          + '<div class="muted" style="font-size:12px">Host: ' + esc(hostName) + ' · ' + r.seats.length + '/' + r.seatsNeeded + ' players'
+          + (r.status === 'playing' ? ' · <span style="color:var(--gold2)">in game</span>' : '') + '</div></div>'
+          + btn + '</div>';
+      };
+      box.innerHTML = (myRoom ? rowHtml(myRoom, true) : '') + others.map(r => rowHtml(r, false)).join('');
       box.querySelectorAll('[data-join]').forEach((b: any) => b.onclick = async () => {
         Sound.click();
         const c = await Net.join(b.dataset.join);
+        if (c && Net.room) { closeModal(); UI.curGame = Net.room.game; watchRoom(Net.room.game); }
+      });
+      box.querySelectorAll('[data-rejoin]').forEach((b: any) => b.onclick = async () => {
+        Sound.click();
+        const c = await Net.rejoin(b.dataset.rejoin);
         if (c && Net.room) { closeModal(); UI.curGame = Net.room.game; watchRoom(Net.room.game); }
       });
     } catch (e) {
@@ -2126,24 +2181,15 @@ function watchRoomCleanup() {
 }
 
 function watchRoom(gameId: string) {
-  if (!Net.room) {
-    toast('No active room found.');
-    UI.go('game');
-    return;
-  }
   _roomWatching = true;
   UI.view = 'play';
   const v = $('#view');
-  const code = Net.room.code || '';
-  const seats = Net.room.seats || [];
-  const needed = Net.room.seatsNeeded || 2;
-  v.innerHTML = '<div class="card center"><h2>🌐 Room ' + esc(code) + '</h2><div class="muted" id="wMsg">Waiting for players… ' + seats.length + '/' + needed + '</div><button class="btn secondary" id="lvBtn">Leave</button><button class="btn secondary" id="voiceBtn" style="margin-top:8px">🎤 Join voice chat</button></div>';
+  v.innerHTML = '<div class="card center"><h2>🌐 Room ' + Net.room.code + '</h2><div class="muted" id="wMsg">Waiting for players… ' + Net.room.seats.length + '/' + Net.room.seatsNeeded + '</div><button class="btn secondary" id="lvBtn">Leave</button><button class="btn secondary" id="voiceBtn" style="margin-top:8px">🎤 Join voice chat</button></div>';
   $('#lvBtn').onclick = () => {
     watchRoomCleanup();
     UI.go('game');
   };
   $('#voiceBtn').onclick = async () => {
-    if (!Net.room) return;
     const ok = await Voice.join('bgh-' + Net.room.code);
     if (ok) {
       const vb = $('#voiceBtn') as HTMLElement;
@@ -2151,28 +2197,25 @@ function watchRoom(gameId: string) {
     }
   };
   Net.onUpdate((room: any) => {
-    if (!room) return;
     const wm = $('#wMsg');
-    const rSeats = room.seats || [];
-    const rNeeded = room.seatsNeeded || 2;
-    if (wm) wm.textContent = 'Waiting for players… ' + rSeats.length + '/' + rNeeded;
-    if (room.status === 'waiting' && rSeats.length >= rNeeded && Net.isHost()) {
-      const names = rSeats.map((u: string, i: number) => (room.names && room.names[u]) || ('Player ' + (i + 1)));
+    if (wm) wm.textContent = 'Waiting for players… ' + room.seats.length + '/' + room.seatsNeeded;
+    if (room.status === 'waiting' && room.seats.length >= room.seatsNeeded && Net.isHost()) {
+      const names = room.seats.map((u: string, i: number) => (room.names && room.names[u]) || ('Player ' + (i + 1)));
       const C = makeCtx(gameId, 'online', names);
       GAMES[gameId].init(C);
       return;
     }
     if (room.status === 'playing') {
       if (!window._C || window._C.gameId !== gameId || window._C.mode !== 'online') {
-        const names = rSeats.map((u: string, i: number) => (room.names && room.names[u]) || ('Player ' + (i + 1)));
+        const names = room.seats.map((u: string, i: number) => (room.names && room.names[u]) || ('Player ' + (i + 1)));
         const C = makeCtx(gameId, 'online', names);
-        C.S = room.state;
+        C.S = JSON.parse(JSON.stringify(room.state));
         GAMES[gameId].onJoin(C);
         return;
       }
       const C = window._C;
       if (JSON.stringify(C.S) !== JSON.stringify(room.state)) {
-        C.S = room.state;
+        C.S = JSON.parse(JSON.stringify(room.state));
         if (C._remote) C._remote(room);
         else C.rerender();
       }
@@ -10260,7 +10303,7 @@ stdInit('clue', {
     const me = C.cur();
 
     if (C.isNet && !Net.isHost()) {
-      const hostSeat = (Net.room && Net.room.seats) ? Net.room.seats.indexOf(Net.room.host) : 0;
+      const hostSeat = Net.room.seats.indexOf(Net.room.host);
       Net.inboxSend({ to: hostSeat, type: 'accuse', from: me, s, w, r });
       toast('Accusation sent to host…');
       return;
