@@ -403,6 +403,7 @@ const Net = {
   },
   async create(game: string, seats: number) {
     if (!this.needNet()) return null;
+    this.leave(true);
     const code = String(ri(1000, 9999));
     const room = {
       code,
@@ -434,6 +435,7 @@ const Net = {
       toast('Game already started');
       return null;
     }
+    this.leave(true);
     if (!room.seats.includes(Auth.user.uid)) {
       if (room.seats.length >= room.seatsNeeded) {
         toast('Room is full');
@@ -460,7 +462,9 @@ const Net = {
     return (this.room.names && this.room.names[u]) || 'Player ' + (i + 1);
   },
   _listen(code: string) {
-    this.leave(true);
+    this._off.forEach(f => { try { f(); } catch (e) {} });
+    this._off = [];
+    if (this._inboxOff) { try { this._inboxOff(); } catch (e) {} this._inboxOff = null; }
     const ref = Backend.db.ref('bgh_rooms/' + code);
     const h = (snap: any) => {
       const r = snap.val();
@@ -979,12 +983,12 @@ const UI = {
     $('#mkRoom').onclick = async () => {
       const seats = parseInt(($('#seatN') as any).value);
       const code = await Net.create(UI.curGame!, seats);
-      if (code) watchRoom(UI.curGame!);
+      if (code && Net.room) watchRoom(UI.curGame!);
     };
     $('#jnRoom').onclick = async () => {
       const code = ($('#joinCode') as any).value;
       const c = await Net.join(code);
-      if (c) watchRoom(this.curGame!);
+      if (c && Net.room) watchRoom(UI.curGame || Net.room.game);
     };
   },
   profile(v: HTMLElement) {
@@ -1492,7 +1496,7 @@ async function openLobbyModal() {
   (m.querySelector('#lmCreate') as HTMLElement).onclick = async () => {
     const seats = parseInt((m.querySelector('#lmSeats') as any).value);
     const code = await Net.create(selGame, seats);
-    if (code) { closeModal(); UI.curGame = selGame; watchRoom(selGame); }
+    if (code && Net.room) { closeModal(); UI.curGame = selGame; watchRoom(selGame); }
   };
   (m.querySelector('#lmJoin') as HTMLElement).onclick = async () => {
     const code = (m.querySelector('#lmCode') as any).value;
@@ -2122,15 +2126,24 @@ function watchRoomCleanup() {
 }
 
 function watchRoom(gameId: string) {
+  if (!Net.room) {
+    toast('No active room found.');
+    UI.go('game');
+    return;
+  }
   _roomWatching = true;
   UI.view = 'play';
   const v = $('#view');
-  v.innerHTML = '<div class="card center"><h2>🌐 Room ' + Net.room.code + '</h2><div class="muted" id="wMsg">Waiting for players… ' + Net.room.seats.length + '/' + Net.room.seatsNeeded + '</div><button class="btn secondary" id="lvBtn">Leave</button><button class="btn secondary" id="voiceBtn" style="margin-top:8px">🎤 Join voice chat</button></div>';
+  const code = Net.room.code || '';
+  const seats = Net.room.seats || [];
+  const needed = Net.room.seatsNeeded || 2;
+  v.innerHTML = '<div class="card center"><h2>🌐 Room ' + esc(code) + '</h2><div class="muted" id="wMsg">Waiting for players… ' + seats.length + '/' + needed + '</div><button class="btn secondary" id="lvBtn">Leave</button><button class="btn secondary" id="voiceBtn" style="margin-top:8px">🎤 Join voice chat</button></div>';
   $('#lvBtn').onclick = () => {
     watchRoomCleanup();
     UI.go('game');
   };
   $('#voiceBtn').onclick = async () => {
+    if (!Net.room) return;
     const ok = await Voice.join('bgh-' + Net.room.code);
     if (ok) {
       const vb = $('#voiceBtn') as HTMLElement;
@@ -2138,17 +2151,20 @@ function watchRoom(gameId: string) {
     }
   };
   Net.onUpdate((room: any) => {
+    if (!room) return;
     const wm = $('#wMsg');
-    if (wm) wm.textContent = 'Waiting for players… ' + room.seats.length + '/' + room.seatsNeeded;
-    if (room.status === 'waiting' && room.seats.length >= room.seatsNeeded && Net.isHost()) {
-      const names = room.seats.map((u: string, i: number) => (room.names && room.names[u]) || ('Player ' + (i + 1)));
+    const rSeats = room.seats || [];
+    const rNeeded = room.seatsNeeded || 2;
+    if (wm) wm.textContent = 'Waiting for players… ' + rSeats.length + '/' + rNeeded;
+    if (room.status === 'waiting' && rSeats.length >= rNeeded && Net.isHost()) {
+      const names = rSeats.map((u: string, i: number) => (room.names && room.names[u]) || ('Player ' + (i + 1)));
       const C = makeCtx(gameId, 'online', names);
       GAMES[gameId].init(C);
       return;
     }
     if (room.status === 'playing') {
       if (!window._C || window._C.gameId !== gameId || window._C.mode !== 'online') {
-        const names = room.seats.map((u: string, i: number) => (room.names && room.names[u]) || ('Player ' + (i + 1)));
+        const names = rSeats.map((u: string, i: number) => (room.names && room.names[u]) || ('Player ' + (i + 1)));
         const C = makeCtx(gameId, 'online', names);
         C.S = room.state;
         GAMES[gameId].onJoin(C);
@@ -10244,7 +10260,7 @@ stdInit('clue', {
     const me = C.cur();
 
     if (C.isNet && !Net.isHost()) {
-      const hostSeat = Net.room.seats.indexOf(Net.room.host);
+      const hostSeat = (Net.room && Net.room.seats) ? Net.room.seats.indexOf(Net.room.host) : 0;
       Net.inboxSend({ to: hostSeat, type: 'accuse', from: me, s, w, r });
       toast('Accusation sent to host…');
       return;
