@@ -199,6 +199,31 @@ if (micBtn) {
   micBtn.onclick = () => Voice.toggleMic();
 }
 
+// In-game voice join button (header) — created dynamically so the single-file
+// main.ts upload flow stays intact. Visible only during an online game when
+// voice isn't already active. The #micBtn handles mute once voice is on.
+const voiceHdrBtn = document.createElement('button');
+voiceHdrBtn.className = 'iconbtn hidden';
+voiceHdrBtn.id = 'voiceHdrBtn';
+voiceHdrBtn.title = 'Join voice chat';
+voiceHdrBtn.textContent = '🎤';
+{
+  const hdr = document.querySelector('header');
+  const mic = $('#micBtn');
+  if (hdr && mic) hdr.insertBefore(voiceHdrBtn, mic);
+  else if (hdr) hdr.appendChild(voiceHdrBtn);
+}
+voiceHdrBtn.onclick = async () => {
+  if (Net.room && Net.room.code) await Voice.join('bgh-' + Net.room.code);
+};
+function updateVoiceHdrBtn() {
+  const b = $('#voiceHdrBtn') as HTMLElement;
+  if (!b) return;
+  const C = (window as any)._C;
+  const show = !!(C && C.isNet && Net.room && Net.room.code && !Voice.active);
+  b.classList.toggle('hidden', !show);
+}
+
 window.addEventListener('beforeunload', () => { try { Friends.setOnline(false); } catch (e) {} });
 
 /* ================= backend / auth / points ================= */
@@ -506,6 +531,7 @@ const Voice = {
       const mb = $('#micBtn');
       if (mb) mb.classList.remove('hidden');
       this._micIcon();
+      updateVoiceHdrBtn();
       toast('Voice connected — talk to your opponent');
       return true;
     } catch (e) { console.warn(e); toast('Voice failed to connect'); return false; }
@@ -527,6 +553,7 @@ const Voice = {
     this.room = null; this.active = false;
     const mb = $('#micBtn');
     if (mb) mb.classList.add('hidden');
+    updateVoiceHdrBtn();
   },
   // Token minting: uses the user's own pasted API secret when present
   // (client-side, owner's device only); falls back to the server endpoint
@@ -1557,7 +1584,10 @@ function makeCtx(gameId: string, mode: string, names: string[], extra?: any) {
     update(fn: (s: any) => void, quiet?: boolean) {
       fn(this.S);
       Sound.click();
-      if (this.isNet) Net.push({ state: this.S, turn: this.S.turn, status: this.S.over ? 'over' : 'playing' });
+      if (this.isNet) {
+        Net.push({ state: this.S, turn: this.S.turn, status: this.S.over ? 'over' : 'playing' });
+        if (!quiet) this.rerender();
+      }
       else if (!quiet) this.rerender();
     },
     onRemote(fn: (r: any) => void) {
@@ -2142,11 +2172,13 @@ function stdInit(id: string, def: any) {
     if (def.inbox) Net.onInbox((msg: any) => { if (window._C === C) def.inbox(C, msg); });
     if (C.isNet) Net.push({ state: C.S, turn: C.S.turn, status: 'playing' });
     def.render($('#view'), C);
+    if (C.isNet) updateVoiceHdrBtn();
   };
   def.onJoin = function(C: any) {
     window._C = C;
     if (def.inbox) Net.onInbox((msg: any) => { if (window._C === C) def.inbox(C, msg); });
     def.render($('#view'), C);
+    updateVoiceHdrBtn();
   };
   GAMES[id] = Object.assign({ id }, def);
 }
