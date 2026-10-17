@@ -962,7 +962,7 @@ const UI = {
       + '<div class="muted">' + esc(Auth.user && Auth.user.email ? Auth.user.email : '') + '</div>'
       + (loggedIn ? '<button class="btn small secondary" id="photoBtn" style="margin-top:8px">&#128247; Change Avatar</button><input type="file" id="photoIn" accept="image/*" style="display:none">' : '')
       + '</div></div></div>'
-      + (loggedIn ? '<div class="card"><h3>&#9998; Change Username</h3><div class="row"><input id="unIn" class="grow" maxlength="16" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="unBtn">Save username</button></div></div>' : '')
+      + (loggedIn ? '<div class="card"><h3>&#9998; Change Username</h3><input id="unIn" maxlength="16" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="unBtn">Save username</button></div>' : '')
       + '<div class="row" style="gap:10px"><div class="stat-box grow"><div class="stat-label">WALLET POINTS</div><div class="stat-val">&#11088; ' + Points.balance + '</div></div>'
       + '<div class="stat-box grow"><div class="stat-label">VICTORIES RECORDED</div><div class="stat-val">' + Points.wins + ' Wins</div></div></div>'
       + '<button class="btn btn-silver" id="profDaily">&#127873; CLAIM DAILY BONUS (+500 &#11088;)</button>'
