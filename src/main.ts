@@ -567,7 +567,7 @@ const Friends = {
       const p = await Backend.db.ref('bgh_users/' + fid).get();
       const d = p.val() || {};
       const pr = await Backend.db.ref('bgh_presence/' + fid).get();
-      out.push({ uid: fid, username: d.username || '?', photo: d.photo || '', online: !!(pr.val() && pr.val().online) });
+      out.push({ uid: fid, username: d.username || ('…' + String(fid).slice(-4).toUpperCase()), photo: d.photo || '', online: !!(pr.val() && pr.val().online) });
     }
     return out;
   },
@@ -1101,10 +1101,11 @@ const UI = {
     const rankPill = (n: string) => '<div style="text-align:center;margin-bottom:10px"><span class="lb-rank">Your Rank: #' + n + '</span></div>';
     const medal = (i: number) => i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : String(i + 1);
     const rowHtml = (r: any, i: number) => {
-      const me = r.me || r.username === Auth.user.username;
+      const me = r.me || (Auth.user && (r.uid === Auth.user.uid || r.username === Auth.user.username));
+      const name = r.username || (Auth.user && r.uid === Auth.user.uid ? Auth.user.username : null) || '?';
       const av = r.photo ? '<img src="' + r.photo + '" style="width:24px;height:24px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px">' : '';
       const botTag = r.bot ? ' <span class="muted" style="font-size:10px">🤖</span>' : '';
-      return '<tr class="' + (me ? 'me' : '') + '"><td>' + medal(i) + '</td><td>' + av + esc(r.username || '?') + botTag + '</td><td>&#11088; ' + r.points + '</td><td>' + (r.wins || 0) + '</td></tr>';
+      return '<tr class="' + (me ? 'me' : '') + '"><td>' + medal(i) + '</td><td>' + av + esc(name) + botTag + '</td><td>&#11088; ' + r.points + '</td><td>' + (r.wins || 0) + '</td></tr>';
     };
     const tableHead = '<table class="lb"><tr><th>#</th><th>Player</th><th>&#11088; Points</th><th>Total Wins</th></tr>';
     if (Backend.mode !== 'firebase') {
@@ -1132,11 +1133,15 @@ const UI = {
       return;
     }
     try {
+      // Fire-and-forget: keep this user's record fresh before reading the board.
+      try {
+        Backend.db.ref('bgh_users/' + Auth.user.uid).update({ username: Auth.user.username, points: Points.balance, wins: Points.wins });
+      } catch (e) {}
       const s = await Backend.db.ref('bgh_users').orderByChild('points').limitToLast(50).get();
       const rows: any[] = [];
-      s.forEach((c: any) => rows.push(c.val()));
+      s.forEach((c: any) => rows.push(Object.assign({ uid: c.key }, c.val())));
       rows.sort((a, b) => b.points - a.points);
-      const myRank = rows.findIndex(r => r.username === Auth.user.username);
+      const myRank = rows.findIndex(r => r.uid === Auth.user.uid);
       box.innerHTML = rankPill(myRank >= 0 ? String(myRank + 1) : '&ndash;')
         + tableHead + rows.map((r, i) => rowHtml(r, i)).join('') + '</table>';
     } catch (e) {
@@ -1324,7 +1329,7 @@ const UI = {
     const playerCode = '#HUSHPLAYER_' + String(uid).slice(-4).toUpperCase();
     v.innerHTML = '<h2>&#128101; Friends &amp; Challenges</h2>'
       + '<button class="btn btn-silver" id="frLobby">&#127918; Multiplayer Rooms</button>'
-      + '<div class="card pc-card"><div class="pc-label">YOUR PLAYER CODE</div><div class="pc-code">' + esc(playerCode) + '</div>'
+      + '<div class="card pc-card"><div style="font-size:20px;font-weight:800;margin-bottom:8px">' + esc(Auth.user ? Auth.user.username : '…') + '</div><div class="pc-label">YOUR PLAYER CODE</div><div class="pc-code">' + esc(playerCode) + '</div>'
       + '<button class="btn small secondary" id="pcCopy">Copy</button></div>'
       + '<div class="card" id="frBox"><div class="muted">Loading…</div></div>';
     (v.querySelector('#frLobby') as HTMLElement).onclick = () => { Sound.click(); openLobbyModal(); };
@@ -1350,7 +1355,14 @@ const UI = {
     if (reqs.length) {
       h += '<h3>Requests (' + reqs.length + ')</h3>';
       for (const r of reqs) {
-        h += '<div class="row" style="align-items:center"><span class="grow"><b>' + esc(r.from || '?') + '</b></span>'
+        // Look up the sender's CURRENT username at render time (not the stale `from` field).
+        let senderName = r.from;
+        try {
+          const sp = await Backend.db.ref('bgh_users/' + r.uid + '/username').get();
+          if (sp.exists() && sp.val()) senderName = sp.val();
+        } catch (e) {}
+        if (!senderName) senderName = '…' + String(r.uid).slice(-4).toUpperCase();
+        h += '<div class="row" style="align-items:center"><span class="grow"><b>' + esc(senderName) + '</b></span>'
           + '<button class="btn small" data-acc="' + r.uid + '">Accept</button>'
           + '<button class="btn small secondary" data-dec="' + r.uid + '">Decline</button></div>';
       }
@@ -1389,7 +1401,8 @@ const UI = {
     box.querySelectorAll('[data-acc]').forEach((b: any) => b.onclick = async () => { await Friends.accept(b.dataset.acc); UI.go('friends'); });
     box.querySelectorAll('[data-dec]').forEach((b: any) => b.onclick = async () => { await Friends.decline(b.dataset.dec); UI.go('friends'); });
     box.querySelectorAll('[data-rm]').forEach((b: any) => b.onclick = async () => {
-      if (confirm('Remove this friend?')) { await Friends.remove(b.dataset.rm); UI.go('friends'); }
+      try { await Friends.remove(b.dataset.rm); toast('Friend removed'); UI.go('friends'); }
+      catch (e: any) { toast('Remove failed: ' + (e && e.message ? e.message : 'unknown error')); }
     });
   },
 };
