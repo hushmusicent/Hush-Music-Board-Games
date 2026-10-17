@@ -15,12 +15,12 @@ declare global {
 }
 
 /* ================= CONFIG =================
-   Firebase + LiveKit keys are baked in below, so online PvP and voice
-   chat work for every player with no setup. A manually pasted config
-   (Profile → Setup) overrides them.
-   SECURITY: the LiveKit API secret must NEVER be baked in here — tokens
-   are minted server-side (CONFIG.tokenUrl + '/livekit-token'). The secret
-   lives only in the server's env vars.
+   Firebase keys are baked in below, so online PvP works for every player
+   with no setup. A manually pasted config (Profile → Setup) overrides them.
+   LiveKit: URL + API key are baked in; the API SECRET is never baked in —
+   paste it in Profile → Voice Chat Setup (stored only in your own browser)
+   and voice tokens are minted on your device. A server token endpoint
+   (CONFIG.tokenUrl + '/livekit-token') can be used instead before launch.
    Demo mode (this device only) works without keys. */
 const CONFIG = {
   firebase: { apiKey: "AIzaSyAhT_oPTtMTlUvHaSOf7zWvnUwTGyJf4sk", authDomain: "project-556676b3-bbce-4e02-8ce.firebaseapp.com", databaseURL: "https://project-556676b3-bbce-4e02-8ce-default-rtdb.firebaseio.com", projectId: "project-556676b3-bbce-4e02-8ce", appId: "1:1043689485585:web:a96258740de6856c5f88b0" },
@@ -280,6 +280,7 @@ const Auth = {
     const m: any = {};
     m['bgh_users/' + this.user.uid] = { username: name, email: email.toLowerCase(), points: START_POINTS, wins: 0, created: Date.now(), lastDaily: 0 };
     m['bgh_usernames/' + name.toLowerCase()] = this.user.uid;
+    m['bgh_codes/' + String(this.user.uid).slice(-4).toUpperCase()] = this.user.uid;
     await Backend.db.ref().update(m);
     Points.balance = START_POINTS;
     Points.perGame = {};
@@ -313,6 +314,7 @@ const Auth = {
     m['bgh_requests/' + uid] = null;
     m['bgh_presence/' + uid] = null;
     if (uname) m['bgh_usernames/' + uname] = null;
+    m['bgh_codes/' + String(uid).slice(-4).toUpperCase()] = null;
     await Backend.db.ref().update(m);
     try { await Backend.auth.currentUser.delete(); } catch (e) { throw e; }
     await this.logout();
@@ -489,7 +491,7 @@ const Voice = {
   active: false,
   configured() {
     const l = CONFIG.livekit;
-    return !!(l.url && l.apiKey && CONFIG.tokenUrl);
+    return !!(l.url && l.apiKey && (l.apiSecret || CONFIG.tokenUrl));
   },
   async join(roomName: string) {
     if (!this.configured()) { toast('Voice needs LiveKit keys (Profile → Setup).'); return false; }
@@ -526,9 +528,24 @@ const Voice = {
     const mb = $('#micBtn');
     if (mb) mb.classList.add('hidden');
   },
-  // Tokens are minted server-side — the API secret never touches the client.
-  // TOKEN_URL is your Emergent backend base URL (set below).
+  // Token minting: uses the user's own pasted API secret when present
+  // (client-side, owner's device only); falls back to the server endpoint
+  // (CONFIG.tokenUrl + '/livekit-token') when a backend is configured.
   async _token(roomName: string, identity: string) {
+    if (CONFIG.livekit.apiSecret) {
+      const header = { alg: 'HS256', typ: 'JWT' };
+      const now = Math.floor(Date.now() / 1000);
+      const payload = {
+        iss: CONFIG.livekit.apiKey, sub: identity, iat: now, exp: now + 3600,
+        video: { room: roomName, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true }
+      };
+      const b64 = (o: any) => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const data = b64(header) + '.' + b64(payload);
+      const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(CONFIG.livekit.apiSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+      const s = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      return data + '.' + s;
+    }
     const r = await fetch(CONFIG.tokenUrl + '/livekit-token?room=' + encodeURIComponent(roomName) + '&identity=' + encodeURIComponent(identity));
     const j = await r.json();
     return j.token;
@@ -945,6 +962,7 @@ const UI = {
       + '<div class="muted">' + esc(Auth.user && Auth.user.email ? Auth.user.email : '') + '</div>'
       + (loggedIn ? '<button class="btn small secondary" id="photoBtn" style="margin-top:8px">&#128247; Change Avatar</button><input type="file" id="photoIn" accept="image/*" style="display:none">' : '')
       + '</div></div></div>'
+      + (loggedIn ? '<div class="card"><h3>&#9998; Change Username</h3><div class="row"><input id="unIn" class="grow" maxlength="16" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="unBtn">Save username</button></div></div>' : '')
       + '<div class="row" style="gap:10px"><div class="stat-box grow"><div class="stat-label">WALLET POINTS</div><div class="stat-val">&#11088; ' + Points.balance + '</div></div>'
       + '<div class="stat-box grow"><div class="stat-label">VICTORIES RECORDED</div><div class="stat-val">' + Points.wins + ' Wins</div></div></div>'
       + '<button class="btn btn-silver" id="profDaily">&#127873; CLAIM DAILY BONUS (+500 &#11088;)</button>'
@@ -952,6 +970,9 @@ const UI = {
       + '<div class="card"><h3>&#9888; System &amp; Cloud Integration</h3>'
       + '<div class="sys-row"><span>Firebase Database</span><span class="' + (fb ? 'pill-connected' : 'pill-off') + '">' + (fb ? 'Connected' : 'Not connected') + '</span></div>'
       + '<div class="sys-row"><span>In-Game Voice Talk</span><span class="' + (Voice.configured() ? 'pill-connected' : 'pill-off') + '">' + (Voice.configured() ? 'Connected' : 'No keys') + '</span></div></div>'
+      + '<div class="card"><h3>&#127908; Voice Chat Setup</h3>'
+      + '<div class="sys-row" style="margin-bottom:8px"><span>In-Game Voice Talk</span><span class="' + (Voice.configured() ? 'pill-connected' : 'pill-off') + '">' + (Voice.configured() ? 'Connected' : 'No keys') + '</span></div>'
+      + '<div class="muted"><b>cloud.livekit.io</b> &rarr; free account &rarr; create project &rarr; paste URL + API key + secret below.</div><textarea id="lkCfg" rows="3" placeholder=\'{"url":"wss://…","apiKey":"…","apiSecret":"…"}\'></textarea><button class="btn secondary" id="saveLk">Save voice keys &amp; reload</button></div>'
       + (!fb ? '<div class="card"><h3>&#128273; Setup &mdash; free online PvP</h3><div class="muted">Same Firebase project as your other hub works here.<br>1. console.firebase.google.com &rarr; project &rarr; &#9881; &rarr; <i>Your apps</i> &rarr; Web &rarr; copy <b>firebaseConfig</b>.<br>2. Paste it below &rarr; Save &rarr; reload.</div><textarea id="fbCfg" rows="6" placeholder=\'Paste firebaseConfig as JSON or JS (const firebaseConfig = {...});\'></textarea><button class="btn btn-silver" id="saveFb">Save keys &amp; reload</button>'
         + '<label style="margin-top:12px">Display name (demo mode)</label><input id="nmIn" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="nmBtn">Save name</button></div>' : '')
       + '<button class="btn secondary" id="loBtn">Log out</button>'
@@ -973,10 +994,46 @@ const UI = {
         toast('That is not valid JSON or JS config');
       }
     };
+    const lk = $('#saveLk');
+    if (lk) lk.onclick = () => {
+      try {
+        const j = parseLooseJson((($('#lkCfg') as any).value || '') as string);
+        localStorage.setItem('bgh_lkcfg', JSON.stringify(j));
+        location.reload();
+      } catch (e) {
+        toast('That is not valid JSON or JS config');
+      }
+    };
     const nb = $('#nmBtn');
     if (nb) nb.onclick = () => {
       localStorage.setItem('bgh_name', ($('#nmIn') as any).value || 'Player');
       location.reload();
+    };
+    const ub = $('#unBtn');
+    if (ub) ub.onclick = async () => {
+      const newName = ((($('#unIn') as any).value) || '').trim();
+      if (!/^[a-zA-Z0-9_]{3,16}$/.test(newName)) { toast('Username: 3-16 letters, numbers or _'); return; }
+      if (!Auth.user || !Auth.user.uid) { toast('Not signed in'); return; }
+      if (newName === Auth.user.username) { toast('That is already your username'); return; }
+      const oldLower = Auth.user.username.toLowerCase();
+      const newLower = newName.toLowerCase();
+      try {
+        const taken = await Backend.db.ref('bgh_usernames/' + newLower).get();
+        if (taken.exists() && taken.val() !== Auth.user.uid) { toast('Username taken'); return; }
+        const m: any = {};
+        m['bgh_users/' + Auth.user.uid + '/username'] = newName;
+        m['bgh_usernames/' + oldLower] = null;
+        m['bgh_usernames/' + newLower] = Auth.user.uid;
+        await Backend.db.ref().update(m);
+        if (Backend.auth.currentUser && Backend.auth.currentUser.updateProfile) {
+          await Backend.auth.currentUser.updateProfile({ displayName: newName });
+        }
+        Auth.user.username = newName;
+        toast('Username changed to ' + newName);
+        UI.go('profile');
+      } catch (e: any) {
+        toast('Could not change username: ' + (e && e.message ? e.message : e));
+      }
     };
     const lo = $('#loBtn');
     if (lo) lo.onclick = () => {
@@ -1281,6 +1338,12 @@ const UI = {
       box.innerHTML = '<div class="muted">Friends need a Firebase account.<br><br>Go to <b>Profile &rarr; Setup</b>, paste your Firebase keys, then log in.</div>';
       return;
     }
+    // Migration: ensure this user's player-code entry exists (older signups lack bgh_codes)
+    try {
+      const myCode = String(Auth.user.uid).slice(-4).toUpperCase();
+      const chk = await Backend.db.ref('bgh_codes/' + myCode).get();
+      if (!chk.exists()) await Backend.db.ref('bgh_codes/' + myCode).set(Auth.user.uid);
+    } catch (e) {}
     const reqs = await Friends.requests();
     const list = await Friends.list();
     let h = '<div class="pc-label" style="margin-bottom:6px">ADD FRIEND BY USERNAME OR PLAYER CODE</div><div class="row"><input id="fq" class="grow" placeholder="Username or #HUSHPLAYER_xxxx" maxlength="24"><button class="btn small btn-silver" id="fadd">Send Request</button></div>';
@@ -1304,7 +1367,17 @@ const UI = {
     (box.querySelector('#fadd') as HTMLElement).onclick = async () => {
       try {
         let q = (box.querySelector('#fq') as any).value.trim().replace(/^#/, '').replace(/^HUSHPLAYER_/i, '');
-        const u = await Friends.findUser(q);
+        let u: any = null;
+        if (q.length === 4) {
+          // Player code lookup: bgh_codes/<4-char suffix> -> uid
+          const cs = await Backend.db.ref('bgh_codes/' + q.toUpperCase()).get();
+          if (cs.exists()) {
+            const p = await Backend.db.ref('bgh_users/' + cs.val()).get();
+            if (p.exists()) u = { uid: cs.val(), ...((p.val() || {}) as any) };
+          }
+        } else {
+          u = await Friends.findUser(q);
+        }
         if (!u) { toast('User not found'); return; }
         if (u.uid === Auth.user.uid) { toast("That's you!"); return; }
         await Friends.sendRequest(u.uid);
