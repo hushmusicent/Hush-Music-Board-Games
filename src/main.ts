@@ -239,8 +239,8 @@ const Auth = {
     if (Backend.mode === 'firebase') {
       Backend.onUser(u => {
         this.user = u ? { uid: u.uid, username: u.displayName || name, email: u.email, photo: '' } : null;
-        if (u) { this._pull(); Friends.setOnline(true); Friends.watchRequests(); }
-        else { Friends.unwatchRequests(); }
+        if (u) { this._pull(); Friends.setOnline(true); Friends.watchRequests(); Friends.watchFriends(); }
+        else { Friends.unwatchRequests(); Friends.unwatchFriends(); }
         UI.refresh();
         if (Backend.mode === 'firebase' && !this.user && UI.view !== 'auth') UI.go('auth');
       });
@@ -321,7 +321,7 @@ const Auth = {
   },
   async logout() {
     try { await Friends.setOnline(false); } catch (e) {}
-    Friends.unwatchRequests();
+    Friends.unwatchRequests(); Friends.unwatchFriends();
     Voice.leave();
     if (Backend.mode === 'firebase') {
       try { await Backend.auth.signOut(); } catch (e) {}
@@ -643,6 +643,23 @@ const Friends = {
     this._reqCount = 0;
     this._reqInit = false;
     this._updateBadge();
+  },
+  _friendsRef: null as any,
+  _friendsInit: false,
+  watchFriends() {
+    this.unwatchFriends();
+    if (Backend.mode !== 'firebase' || !Auth.user || Auth.user.uid === 'local') return;
+    this._friendsRef = Backend.db.ref('bgh_friends/' + Auth.user.uid);
+    this._friendsInit = false;
+    this._friendsRef.on('value', (s: any) => {
+      if (this._friendsInit && UI.view === 'friends') UI.render();
+      this._friendsInit = true;
+    });
+  },
+  unwatchFriends() {
+    if (this._friendsRef) { try { this._friendsRef.off('value'); } catch (e) {} }
+    this._friendsRef = null;
+    this._friendsInit = false;
   },
 };
 
