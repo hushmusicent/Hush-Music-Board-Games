@@ -17,16 +17,19 @@ declare global {
 /* ================= CONFIG =================
    Firebase keys are baked in below, so online PvP works for every player
    with no setup. A manually pasted config (Profile → Setup) overrides them.
-   LiveKit: URL + API key are baked in; the API SECRET is never baked in —
-   paste it in Profile → Voice Chat Setup (stored only in your own browser)
-   and voice tokens are minted on your device. A server token endpoint
-   (CONFIG.tokenUrl + '/livekit-token') can be used instead before launch.
+   LiveKit: the server URL + API key are baked in. Voice tokens are minted
+   by a Cloudflare Worker (CONFIG.tokenUrl) — the API secret lives only in
+   the Worker's env vars and never touches player devices. The Worker URL is
+   baked into CONFIG.tokenUrl (Profile → Voice Chat Setup can override it
+   via localStorage); every player then gets voice automatically with no setup.
+   Legacy fallback: if tokenUrl is empty but bgh_lkcfg holds a full keys
+   JSON with apiSecret (owner's own device), tokens are minted client-side.
    Demo mode (this device only) works without keys. */
 const CONFIG = {
   firebase: { apiKey: "AIzaSyAhT_oPTtMTlUvHaSOf7zWvnUwTGyJf4sk", authDomain: "project-556676b3-bbce-4e02-8ce.firebaseapp.com", databaseURL: "https://project-556676b3-bbce-4e02-8ce-default-rtdb.firebaseio.com", projectId: "project-556676b3-bbce-4e02-8ce", appId: "1:1043689485585:web:a96258740de6856c5f88b0" },
-  livekit: { url: "wss://board-games-nlukangq.livekit.cloud", apiKey: "APID28tjQfDMHrd", apiSecret: "" },
-  // Your Emergent backend base URL, e.g. "https://your-app.emergent.host" — serves /livekit-token
-  tokenUrl: ""
+  livekit: { url: "wss://board-games-nlukangq.livekit.cloud", apiKey: "APInxjmUEynwYKz", apiSecret: "" },
+  // Your Cloudflare Worker base URL — mints LiveKit tokens (baked in; Profile → Voice Chat Setup can override)
+  tokenUrl: "https://wispy-darkness-24be.hushmusicent419.workers.dev"
 };
 try {
   const saved = JSON.parse(localStorage.getItem('bgh_fbcfg') || 'null');
@@ -551,10 +554,11 @@ const Voice = {
   active: false,
   configured() {
     const l = CONFIG.livekit;
-    return !!(l.url && l.apiKey && (l.apiSecret || CONFIG.tokenUrl));
+    // Server path (every player): tokenUrl set. Legacy owner path: full keys pasted.
+    return !!((l.url && CONFIG.tokenUrl) || (l.url && l.apiKey && l.apiSecret));
   },
   async join(roomName: string) {
-    if (!this.configured()) { toast('Voice needs LiveKit keys (Profile → Setup).'); return false; }
+    if (!this.configured()) { toast('Voice needs the token server URL (Profile → Voice Chat Setup).'); return false; }
     if (this.active) return true;
     try {
       await loadScript('https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js');
@@ -590,11 +594,11 @@ const Voice = {
     if (mb) mb.classList.add('hidden');
     updateVoiceHdrBtn();
   },
-  // Token minting: uses the user's own pasted API secret when present
-  // (client-side, owner's device only); falls back to the server endpoint
-  // (CONFIG.tokenUrl + '/livekit-token') when a backend is configured.
+  // Token minting: server-side via the Cloudflare Worker (CONFIG.tokenUrl).
+  // Legacy fallback: if no tokenUrl but the owner pasted full keys with an
+  // apiSecret (bgh_lkcfg), mint client-side on their own device only.
   async _token(roomName: string, identity: string) {
-    if (CONFIG.livekit.apiSecret) {
+    if (!CONFIG.tokenUrl && CONFIG.livekit.apiSecret) {
       const header = { alg: 'HS256', typ: 'JWT' };
       const now = Math.floor(Date.now() / 1000);
       const payload = {
@@ -608,8 +612,9 @@ const Voice = {
       const s = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
       return data + '.' + s;
     }
-    const r = await fetch(CONFIG.tokenUrl + '/livekit-token?room=' + encodeURIComponent(roomName) + '&identity=' + encodeURIComponent(identity));
+    const r = await fetch(CONFIG.tokenUrl + '/?room=' + encodeURIComponent(roomName) + '&identity=' + encodeURIComponent(identity));
     const j = await r.json();
+    if (!j.token) throw new Error('No token from server');
     return j.token;
   }
 };
@@ -1051,7 +1056,7 @@ const UI = {
       + '<div class="sys-row"><span>In-Game Voice Talk</span><span class="' + (Voice.configured() ? 'pill-connected' : 'pill-off') + '">' + (Voice.configured() ? 'Connected' : 'No keys') + '</span></div></div>'
       + '<div class="card"><h3>&#127908; Voice Chat Setup</h3>'
       + '<div class="sys-row" style="margin-bottom:8px"><span>In-Game Voice Talk</span><span class="' + (Voice.configured() ? 'pill-connected' : 'pill-off') + '">' + (Voice.configured() ? 'Connected' : 'No keys') + '</span></div>'
-      + '<div class="muted"><b>cloud.livekit.io</b> &rarr; free account &rarr; create project &rarr; paste URL + API key + secret below.</div><textarea id="lkCfg" rows="3" placeholder=\'{"url":"wss://…","apiKey":"…","apiSecret":"…"}\'></textarea><button class="btn secondary" id="saveLk">Save voice keys &amp; reload</button></div>'
+      + '<div class="muted">Paste your token server URL (Cloudflare Worker) below — one time, then every player gets voice automatically.</div><textarea id="lkCfg" rows="2" placeholder=\'https://xxx.workers.dev\'></textarea><button class="btn secondary" id="saveLk">Save voice server &amp; reload</button></div>'
       + (!fb ? '<div class="card"><h3>&#128273; Setup &mdash; free online PvP</h3><div class="muted">Same Firebase project as your other hub works here.<br>1. console.firebase.google.com &rarr; project &rarr; &#9881; &rarr; <i>Your apps</i> &rarr; Web &rarr; copy <b>firebaseConfig</b>.<br>2. Paste it below &rarr; Save &rarr; reload.</div><textarea id="fbCfg" rows="6" placeholder=\'Paste firebaseConfig as JSON or JS (const firebaseConfig = {...});\'></textarea><button class="btn btn-silver" id="saveFb">Save keys &amp; reload</button>'
         + '<label style="margin-top:12px">Display name (demo mode)</label><input id="nmIn" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="nmBtn">Save name</button></div>' : '')
       + '<button class="btn secondary" id="loBtn">Log out</button>'
@@ -1075,13 +1080,18 @@ const UI = {
     };
     const lk = $('#saveLk');
     if (lk) lk.onclick = () => {
-      try {
-        const j = parseLooseJson((($('#lkCfg') as any).value || '') as string);
-        localStorage.setItem('bgh_lkcfg', JSON.stringify(j));
-        location.reload();
-      } catch (e) {
-        toast('That is not valid JSON or JS config');
+      let v = ((($('#lkCfg') as any).value) || '').trim();
+      // Tolerate a JSON blob containing tokenUrl (e.g. {"tokenUrl":"https://…"})
+      if (v.startsWith('{')) {
+        try {
+          const j = JSON.parse(v);
+          if (j && j.tokenUrl) v = String(j.tokenUrl).trim();
+        } catch (e) {}
       }
+      v = v.replace(/\/+$/, '');
+      if (!v) { toast('Paste your token server URL first'); return; }
+      localStorage.setItem('bgh_tokenurl', v);
+      location.reload();
     };
     const nb = $('#nmBtn');
     if (nb) nb.onclick = () => {
