@@ -17,31 +17,16 @@ declare global {
 /* ================= CONFIG =================
    Firebase keys are baked in below, so online PvP works for every player
    with no setup. A manually pasted config (Profile → Setup) overrides them.
-   LiveKit: the server URL + API key are baked in. Voice tokens are minted
-   by a Cloudflare Worker (CONFIG.tokenUrl) — the API secret lives only in
-   the Worker's env vars and never touches player devices. The Worker URL is
-   baked into CONFIG.tokenUrl (Profile → Voice Chat Setup can override it
-   via localStorage); every player then gets voice automatically with no setup.
-   Legacy fallback: if tokenUrl is empty but bgh_lkcfg holds a full keys
-   JSON with apiSecret (owner's own device), tokens are minted client-side.
-   Demo mode (this device only) works without keys. */
+   Voice talk is pure WebRTC over the same Firebase database (the hand-game
+   recipe): no LiveKit, no token server, no API keys — it works for every
+   player in a room automatically. Demo mode (this device only) works
+   without keys. */
 const CONFIG = {
-  firebase: { apiKey: "AIzaSyAhT_oPTtMTlUvHaSOf7zWvnUwTGyJf4sk", authDomain: "project-556676b3-bbce-4e02-8ce.firebaseapp.com", databaseURL: "https://project-556676b3-bbce-4e02-8ce-default-rtdb.firebaseio.com", projectId: "project-556676b3-bbce-4e02-8ce", appId: "1:1043689485585:web:a96258740de6856c5f88b0" },
-  livekit: { url: "wss://board-games-nlukangq.livekit.cloud", apiKey: "APInxjmUEynwYKz", apiSecret: "" },
-  // Your Cloudflare Worker base URL — mints LiveKit tokens (baked in; Profile → Voice Chat Setup can override)
-  tokenUrl: "https://wispy-darkness-24be.hushmusicent419.workers.dev"
+  firebase: { apiKey: "AIzaSyAhT_oPTtMTlUvHaSOf7zWvnUwTGyJf4sk", authDomain: "project-556676b3-bbce-4e02-8ce.firebaseapp.com", databaseURL: "https://project-556676b3-bbce-4e02-8ce-default-rtdb.firebaseio.com", projectId: "project-556676b3-bbce-4e02-8ce", appId: "1:1043689485585:web:a96258740de6856c5f88b0" }
 };
 try {
   const saved = JSON.parse(localStorage.getItem('bgh_fbcfg') || 'null');
   if (saved) CONFIG.firebase = saved;
-} catch (e) {}
-try {
-  const lks = JSON.parse(localStorage.getItem('bgh_lkcfg') || 'null');
-  if (lks) CONFIG.livekit = lks;
-} catch (e) {}
-try {
-  const tu = localStorage.getItem('bgh_tokenurl');
-  if (tu) CONFIG.tokenUrl = tu;
 } catch (e) {}
 
 const START_POINTS = 1000, DAILY_BONUS = 500;
@@ -217,7 +202,7 @@ function ensureVoiceHdrBtn(): HTMLElement | null {
   b.title = 'Join voice chat';
   b.textContent = '🎤';
   b.onclick = async () => {
-    if (Net.room && Net.room.code) await Voice.join('bgh-' + Net.room.code);
+    if (Net.room && Net.room.code) await Voice.join();
   };
   const mic = document.getElementById('micBtn');
   if (mic) hdr.insertBefore(b, mic);
@@ -553,33 +538,207 @@ const Net = {
   }
 };
 
-/* ================= VOICE (LiveKit; needs keys pasted in Profile → Setup) ================= */
+/* ================= VOICE (pure WebRTC over Firebase RTDB — the hand-game recipe) =================
+   No LiveKit, no token server, no API keys. Audio-only mesh between the
+   humans in a room; signaling lives under the room itself:
+     bgh_rooms/<code>/voice_presence/<uid> = { name, session, muted, ts }
+     bgh_rooms/<code>/voice_signals/<pair> = { offer, answer, cands/<push> }
+   pair = the two uids sorted + '_'. Each join stamps a session id and
+   signals from other sessions are ignored; offer/answer docs are
+   overwritten (set), never merged; every setRemoteDescription is guarded
+   by signalingState, so a rejoin can never throw InvalidStateError.
+   Only the lower uid offers (deterministic), so two players can never
+   both offer and deadlock. Failures show the real error name + message. */
 const Voice = {
-  room: null as any,
-  micMuted: false,
   active: false,
+  micMuted: false,
+  stream: null as any,
+  session: '',
+  code: '',
+  myUid: '',
+  peers: {} as Record<string, any>,
+  present: {} as Record<string, boolean>,
+  _off: [] as Array<() => void>,
   configured() {
-    const l = CONFIG.livekit;
-    // Server path (every player): tokenUrl set. Legacy owner path: full keys pasted.
-    return !!((l.url && CONFIG.tokenUrl) || (l.url && l.apiKey && l.apiSecret));
+    // Voice needs exactly what online PvP needs: Firebase. No keys to paste.
+    return Backend.mode === 'firebase';
   },
-  async join(roomName: string) {
-    if (!this.configured()) { toast('Voice needs the token server URL (Profile → Voice Chat Setup).'); return false; }
+  _pairId(a: string, b: string) {
+    return [a, b].sort().join('_');
+  },
+  _sigRef(pair: string) {
+    return Backend.db.ref('bgh_rooms/' + this.code + '/voice_signals/' + pair);
+  },
+  _presRef(uid?: string) {
+    return Backend.db.ref('bgh_rooms/' + this.code + '/voice_presence/' + (uid || this.myUid));
+  },
+  async join() {
     if (this.active) return true;
+    if (!this.configured()) { toast('Voice talk needs Firebase (Profile → Setup).'); return false; }
+    if (!Net.room || !Net.room.code) { toast('Join a room first.'); return false; }
+    if (!Auth.user || !Auth.user.uid) { toast('Not signed in.'); return false; }
     try {
-      await loadScript('https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js');
-      const token = await this._token(roomName, Auth.user ? Auth.user.username : 'player');
-      const r = new (window as any).LivekitClient.Room();
-      await r.connect(CONFIG.livekit.url, token);
-      await r.localParticipant.setMicrophoneEnabled(true);
-      this.room = r; this.active = true; this.micMuted = false;
+      this.code = String(Net.room.code);
+      this.myUid = String(Auth.user.uid);
+      this.session = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      // Capture ONCE and share that one stream with every peer connection.
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const pres = this._presRef();
+      await pres.set({ name: Auth.user.username || 'Player', session: this.session, muted: false, ts: Date.now() });
+      try { pres.onDisconnect().remove(); } catch (e) {}
+      const pr = Backend.db.ref('bgh_rooms/' + this.code + '/voice_presence');
+      const addH = (snap: any) => {
+        const uid = String(snap.key);
+        const v = snap.val() || {};
+        this.present[uid] = true;
+        if (uid !== this.myUid) this._onPeerSeen(uid, v.session);
+        this._updateCount();
+      };
+      const chgH = (snap: any) => {
+        const uid = String(snap.key);
+        const v = snap.val() || {};
+        if (uid === this.myUid) return;
+        // Session changed = that player rejoined: drop the old peer, start clean.
+        const old = this.peers[uid];
+        if (old && old.session !== v.session) this._dropPeer(uid);
+        this._onPeerSeen(uid, v.session);
+      };
+      const remH = (snap: any) => {
+        const uid = String(snap.key);
+        delete this.present[uid];
+        if (uid !== this.myUid) this._dropPeer(uid);
+        this._updateCount();
+      };
+      pr.on('child_added', addH);
+      pr.on('child_changed', chgH);
+      pr.on('child_removed', remH);
+      this._off.push(() => pr.off('child_added', addH));
+      this._off.push(() => pr.off('child_changed', chgH));
+      this._off.push(() => pr.off('child_removed', remH));
+      this.active = true;
+      this.micMuted = false;
       const mb = $('#micBtn');
       if (mb) mb.classList.remove('hidden');
       this._micIcon();
+      this._updateCount();
       updateVoiceHdrBtn();
-      toast('Voice connected — talk to your opponent');
+      toast('Voice connected — talk to your opponents');
       return true;
-    } catch (e) { console.warn(e); toast('Voice failed to connect'); return false; }
+    } catch (e: any) {
+      console.warn(e);
+      toast('Voice error: ' + (e && e.name ? e.name + ': ' : '') + (e && e.message ? e.message : e));
+      this.leave();
+      return false;
+    }
+  },
+  _onPeerSeen(uid: string, session: string) {
+    if (!session) return; // presence without a session stamp is stale — wait for its change event
+    const old = this.peers[uid];
+    if (old) {
+      if (old.session === session) return;
+      this._dropPeer(uid);
+    }
+    this._createPeer(uid, session);
+  },
+  _createPeer(uid: string, session: string) {
+    const pair = this._pairId(this.myUid, uid);
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    const peer: any = { pc, session, pending: [] as any[] };
+    this.peers[uid] = peer;
+    try { this.stream.getTracks().forEach((t: any) => pc.addTrack(t, this.stream)); } catch (e) {}
+    pc.onicecandidate = (ev: any) => {
+      if (ev.candidate) {
+        try { this._sigRef(pair).child('cands').push({ from: this.myUid, session: this.session, cand: ev.candidate.toJSON() }); } catch (e) {}
+      }
+    };
+    // Audio elements are pinned in a container outside #view so UI
+    // re-renders never detach them (detaching kills audio).
+    pc.ontrack = (ev: any) => {
+      const el = this._audioEl(uid);
+      try {
+        if (ev.streams && ev.streams[0]) el.srcObject = ev.streams[0];
+        else { const st = new MediaStream(); st.addTrack(ev.track); el.srcObject = st; }
+        const p = el.play();
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) {}
+    };
+    const sig = this._sigRef(pair);
+    const valH = async (snap: any) => {
+      const v = snap.val() || {};
+      try {
+        if (v.offer && v.offer.from !== this.myUid && v.offer.session === peer.session && pc.signalingState === 'stable') {
+          await pc.setRemoteDescription(new RTCSessionDescription(v.offer.sdp));
+          const ans = await pc.createAnswer();
+          await pc.setLocalDescription(ans);
+          await sig.child('answer').set({ from: this.myUid, session: this.session, sdp: pc.localDescription });
+          this._flushPending(peer);
+        } else if (v.answer && v.answer.from !== this.myUid && v.answer.session === peer.session && pc.signalingState === 'have-local-offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(v.answer.sdp));
+          this._flushPending(peer);
+        }
+      } catch (e) { console.warn(e); }
+    };
+    sig.on('value', valH);
+    const candH = (snap: any) => {
+      const c = snap.val() || {};
+      if (c.from === this.myUid) return;
+      if (c.session && c.session !== peer.session) return;
+      if (!c.cand) return;
+      if (pc.remoteDescription) pc.addIceCandidate(new RTCIceCandidate(c.cand)).catch(() => {});
+      else peer.pending.push(c.cand);
+    };
+    sig.child('cands').on('child_added', candH);
+    peer._off = () => {
+      try { sig.off('value', valH); } catch (e) {}
+      try { sig.child('cands').off('child_added', candH); } catch (e) {}
+    };
+    // Only the lower uid offers — the other side answers. Deterministic,
+    // so a race can never leave both sides in have-local-offer.
+    if (this.myUid < uid) {
+      (async () => {
+        try {
+          const off = await pc.createOffer();
+          await pc.setLocalDescription(off);
+          await sig.child('offer').set({ from: this.myUid, session: this.session, sdp: pc.localDescription });
+        } catch (e) { console.warn(e); }
+      })();
+    }
+    this._updateCount();
+  },
+  _flushPending(peer: any) {
+    const list = peer.pending || [];
+    peer.pending = [];
+    list.forEach((c: any) => {
+      try { peer.pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {}); } catch (e) {}
+    });
+  },
+  _audioEl(uid: string) {
+    let wrap = document.getElementById('voiceAudioWrap');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = 'voiceAudioWrap';
+      wrap.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0.01;overflow:hidden;pointer-events:none;';
+      document.body.appendChild(wrap);
+    }
+    let el = document.getElementById('voiceAudio-' + uid) as HTMLAudioElement;
+    if (!el) {
+      el = document.createElement('audio');
+      el.id = 'voiceAudio-' + uid;
+      (el as any).autoplay = true;
+      (el as any).playsInline = true;
+      wrap.appendChild(el);
+    }
+    return el;
+  },
+  _dropPeer(uid: string) {
+    const peer = this.peers[uid];
+    if (!peer) return;
+    try { if (peer._off) peer._off(); } catch (e) {}
+    try { peer.pc.close(); } catch (e) {}
+    const el = document.getElementById('voiceAudio-' + uid);
+    if (el) el.remove();
+    delete this.peers[uid];
+    this._updateCount();
   },
   _micIcon() {
     const mb = $('#micBtn');
@@ -587,41 +746,56 @@ const Voice = {
     mb.textContent = this.micMuted ? '🚫' : '🎤';
     mb.classList.toggle('off', this.micMuted);
   },
+  _updateCount() {
+    let c = document.getElementById('voiceCount');
+    if (!c) {
+      const hdr = document.querySelector('header');
+      if (!hdr) return;
+      c = document.createElement('span');
+      c.id = 'voiceCount';
+      c.className = 'pill gold hidden';
+      const mic = document.getElementById('micBtn');
+      if (mic) hdr.insertBefore(c, mic);
+      else hdr.appendChild(c);
+    }
+    const n = Object.keys(this.present).length;
+    c.textContent = n + ' in call';
+    c.classList.toggle('hidden', !this.active || n === 0);
+  },
   toggleMic() {
-    if (!this.room) return;
+    if (!this.active || !this.stream) return;
     this.micMuted = !this.micMuted;
-    this.room.localParticipant.setMicrophoneEnabled(!this.micMuted);
+    try { this.stream.getAudioTracks().forEach((t: any) => { t.enabled = !this.micMuted; }); } catch (e) {}
+    try { this._presRef().update({ muted: this.micMuted }); } catch (e) {}
     this._micIcon();
   },
   leave() {
-    if (this.room) { try { this.room.disconnect(); } catch (e) {} }
-    this.room = null; this.active = false;
+    this._off.forEach(f => { try { f(); } catch (e) {} });
+    this._off = [];
+    const uids = Object.keys(this.peers);
+    uids.forEach(u => this._dropPeer(u));
+    this.peers = {};
+    this.present = {};
+    if (this.stream) { try { this.stream.getTracks().forEach((t: any) => t.stop()); } catch (e) {} }
+    this.stream = null;
+    // Best effort: remove my presence + the signal docs I took part in, so
+    // nothing stale survives into the next session.
+    if (Backend.db && this.code && this.myUid) {
+      const code = this.code, me = this.myUid;
+      try { Backend.db.ref('bgh_rooms/' + code + '/voice_presence/' + me).remove(); } catch (e) {}
+      uids.forEach(u => {
+        try { Backend.db.ref('bgh_rooms/' + code + '/voice_signals/' + this._pairId(me, u)).remove(); } catch (e) {}
+      });
+    }
+    this.active = false;
+    this.micMuted = false;
+    this.code = '';
+    this.session = '';
     const mb = $('#micBtn');
     if (mb) mb.classList.add('hidden');
+    const vc = document.getElementById('voiceCount');
+    if (vc) vc.classList.add('hidden');
     updateVoiceHdrBtn();
-  },
-  // Token minting: server-side via the Cloudflare Worker (CONFIG.tokenUrl).
-  // Legacy fallback: if no tokenUrl but the owner pasted full keys with an
-  // apiSecret (bgh_lkcfg), mint client-side on their own device only.
-  async _token(roomName: string, identity: string) {
-    if (!CONFIG.tokenUrl && CONFIG.livekit.apiSecret) {
-      const header = { alg: 'HS256', typ: 'JWT' };
-      const now = Math.floor(Date.now() / 1000);
-      const payload = {
-        iss: CONFIG.livekit.apiKey, sub: identity, iat: now, exp: now + 3600,
-        video: { room: roomName, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true }
-      };
-      const b64 = (o: any) => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      const data = b64(header) + '.' + b64(payload);
-      const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(CONFIG.livekit.apiSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-      const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
-      const s = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      return data + '.' + s;
-    }
-    const r = await fetch(CONFIG.tokenUrl + '/?room=' + encodeURIComponent(roomName) + '&identity=' + encodeURIComponent(identity));
-    const j = await r.json();
-    if (!j.token) throw new Error('No token from server');
-    return j.token;
   }
 };
 
@@ -1005,10 +1179,9 @@ const UI = {
       + '<div class="card"><h3>&#127941; GAME VICTORIES BREAKDOWN</h3><div class="breakdown-grid">' + breakdown + '</div>' + bdTotals + '</div>'
       + '<div class="card"><h3>&#9888; System &amp; Cloud Integration</h3>'
       + '<div class="sys-row"><span>Firebase Database</span><span class="' + (fb ? 'pill-connected' : 'pill-off') + '">' + (fb ? 'Connected' : 'Not connected') + '</span></div>'
-      + '<div class="sys-row"><span>In-Game Voice Talk</span><span class="' + (Voice.configured() ? 'pill-connected' : 'pill-off') + '">' + (Voice.configured() ? 'Connected' : 'No keys') + '</span></div></div>'
-      + '<div class="card"><h3>&#127908; Voice Chat Setup</h3>'
-      + '<div class="sys-row" style="margin-bottom:8px"><span>In-Game Voice Talk</span><span class="' + (Voice.configured() ? 'pill-connected' : 'pill-off') + '">' + (Voice.configured() ? 'Connected' : 'No keys') + '</span></div>'
-      + '<div class="muted">Paste your token server URL (Cloudflare Worker) below — one time, then every player gets voice automatically.</div><textarea id="lkCfg" rows="2" placeholder=\'https://xxx.workers.dev\'></textarea><button class="btn secondary" id="saveLk">Save voice server &amp; reload</button></div>'
+      + '<div class="sys-row"><span>In-Game Voice Talk</span><span class="' + (Voice.configured() ? 'pill-connected' : 'pill-off') + '">' + (Voice.configured() ? 'Ready' : 'Needs online') + '</span></div></div>'
+      + '<div class="card"><h3>&#127908; Voice Talk</h3>'
+      + '<div class="muted">Built in — no server, no keys. Join a room or an online game and tap &#127908; Join voice chat. Tap &#127908; in the header to mute. Works automatically for every player in the room.</div></div>'
       + (!fb ? '<div class="card"><h3>&#128273; Setup &mdash; free online PvP</h3><div class="muted">Same Firebase project as your other hub works here.<br>1. console.firebase.google.com &rarr; project &rarr; &#9881; &rarr; <i>Your apps</i> &rarr; Web &rarr; copy <b>firebaseConfig</b>.<br>2. Paste it below &rarr; Save &rarr; reload.</div><textarea id="fbCfg" rows="6" placeholder=\'Paste firebaseConfig as JSON or JS (const firebaseConfig = {...});\'></textarea><button class="btn btn-silver" id="saveFb">Save keys &amp; reload</button>'
         + '<label style="margin-top:12px">Display name (demo mode)</label><input id="nmIn" value="' + esc(Auth.user ? Auth.user.username : '') + '"><button class="btn secondary" id="nmBtn">Save name</button></div>' : '')
       + '<button class="btn secondary" id="loBtn">Log out</button>'
@@ -1029,21 +1202,6 @@ const UI = {
       } catch (e) {
         toast('That is not valid JSON or JS config');
       }
-    };
-    const lk = $('#saveLk');
-    if (lk) lk.onclick = () => {
-      let v = ((($('#lkCfg') as any).value) || '').trim();
-      // Tolerate a JSON blob containing tokenUrl (e.g. {"tokenUrl":"https://…"})
-      if (v.startsWith('{')) {
-        try {
-          const j = JSON.parse(v);
-          if (j && j.tokenUrl) v = String(j.tokenUrl).trim();
-        } catch (e) {}
-      }
-      v = v.replace(/\/+$/, '');
-      if (!v) { toast('Paste your token server URL first'); return; }
-      localStorage.setItem('bgh_tokenurl', v);
-      location.reload();
     };
     const nb = $('#nmBtn');
     if (nb) nb.onclick = () => {
@@ -2161,7 +2319,7 @@ function watchRoom(gameId: string) {
   };
   $('#voiceBtn').onclick = async () => {
     if (!Net.room || !Net.room.code) return;
-    const ok = await Voice.join('bgh-' + Net.room.code);
+    const ok = await Voice.join();
     if (ok) {
       const vb = $('#voiceBtn') as HTMLElement;
       if (vb) { vb.textContent = '🎤 Voice on — tap 🎤 in header to mute'; vb.setAttribute('disabled', 'true'); }
