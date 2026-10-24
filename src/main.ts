@@ -634,7 +634,10 @@ const Voice = {
       return true;
     } catch (e: any) {
       console.warn(e);
-      toast('Voice error: ' + (e && e.name ? e.name + ': ' : '') + (e && e.message ? e.message : e));
+      // Raw error first, always. NotAllowedError gets one actionable line
+      // after it: the browser blocked the mic, so the fix is in site settings.
+      const hint = (e && e.name === 'NotAllowedError') ? ' — allow the microphone for this site in your browser settings, reload, then try again.' : '';
+      toast('Voice error: ' + (e && e.name ? e.name + ': ' : '') + (e && e.message ? e.message : e) + hint);
       this.leave();
       return false;
     }
@@ -1148,7 +1151,8 @@ const UI = {
       + '<p class="hero-desc">Create a private room and share the 4-digit code, or join a friend&rsquo;s room.</p></div>'
       + '<div class="card"><h3>Create a room</h3><label>Players</label><select id="seatN">' + Array.from({ length: pmax - pmin + 1 }, (_, i) => '<option value="' + (pmin + i) + '">' + (pmin + i) + ' players</option>').join('') + '</select>'
       + '<button class="btn btn-silver" id="mkRoom">&#65291; Create ' + esc(g.name) + ' Room</button><div id="roomInfo"></div></div>'
-      + '<div class="card"><h3>Join a room</h3><label>Room code</label><input id="joinCode" inputmode="numeric" placeholder="4-digit code"><button class="btn btn-outline" id="jnRoom">Join Room</button></div>';
+      + '<div class="card"><h3>Join a room</h3><label>Room code</label><input id="joinCode" inputmode="numeric" placeholder="4-digit code"><button class="btn btn-outline" id="jnRoom">Join Room</button></div>'
+      + '<div class="card hidden" id="rejoinCard"><h3>&#8617; Rejoin your room</h3><div class="muted" id="rejoinInfo">Checking…</div><button class="btn btn-silver" id="rejoinBtn" style="margin-top:8px">&#9654; Rejoin Room</button></div>';
     $('#backBtn').onclick = () => this.go('game');
     $('#mkRoom').onclick = async () => {
       const seats = parseInt(($('#seatN') as any).value);
@@ -1160,6 +1164,31 @@ const UI = {
       const c = await Net.join(code);
       if (c && Net.room) watchRoom(this.curGame || Net.room.game);
     };
+    // Rejoin your last room (hand-game style): if the saved last-room code
+    // still exists and still seats this player, show a one-tap way back in
+    // — even mid-game — instead of making them dig through the rooms list.
+    (async () => {
+      const card = $('#rejoinCard');
+      if (!card || Backend.mode !== 'firebase' || !Auth.user || !Auth.user.uid) return;
+      try {
+        const lastCode = localStorage.getItem('bgh_lastroom');
+        if (!lastCode) return;
+        const s = await Backend.db.ref('bgh_rooms/' + lastCode).get();
+        if (!s.exists()) { try { localStorage.removeItem('bgh_lastroom'); } catch (e) {} return; }
+        const r = s.val();
+        if (!r || !r.seats || !r.seats.includes(Auth.user.uid)) return;
+        const g = GAMES[r.game];
+        const info = $('#rejoinInfo');
+        if (info) info.textContent = (g ? g.name : 'Game') + ' · Room #' + r.code + ' · ' + r.seats.length + '/' + r.seatsNeeded + ' players' + (r.status === 'playing' ? ' · in game' : ' · waiting');
+        const rb = $('#rejoinBtn');
+        if (rb) rb.onclick = async () => {
+          Sound.click();
+          const c = await Net.rejoin(lastCode);
+          if (c && Net.room) { UI.curGame = Net.room.game; watchRoom(Net.room.game); }
+        };
+        card.classList.remove('hidden');
+      } catch (e) {}
+    })();
   },
   profile(v: HTMLElement) {
     const fb = Backend.mode === 'firebase';
@@ -2333,7 +2362,7 @@ function watchRoom(gameId: string) {
       if (vb) { vb.textContent = '🎤 Voice on — tap 🎤 in header to mute'; vb.setAttribute('disabled', 'true'); }
     }
   };
-  Net.onUpdate((room: any) => {
+  const handleRoomUpdate = (room: any) => {
     const wm = $('#wMsg');
     if (wm) wm.textContent = 'Waiting for players… ' + room.seats.length + '/' + room.seatsNeeded;
     if (room.status === 'waiting' && room.seats.length >= room.seatsNeeded && Net.isHost()) {
@@ -2357,7 +2386,13 @@ function watchRoom(gameId: string) {
         else C.rerender();
       }
     }
-  });
+  };
+  Net.onUpdate(handleRoomUpdate);
+  // Rejoining a room that's already 'playing' changes nothing in the room
+  // doc, so the listener's change-check never fires and the player would
+  // sit on the waiting card until someone moves. Evaluate the current room
+  // once right now so a rejoin jumps straight into the game.
+  if (Net.room) handleRoomUpdate(Net.room);
 }
 
 /* ================= game helpers ================= */
