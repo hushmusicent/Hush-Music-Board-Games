@@ -742,7 +742,6 @@ const GAMES: Record<string, any> = {};
 const UI = {
   view: 'home',
   curGame: null as string | null,
-  sugarTrailBoard: '1984',
   go(v: string) {
     this.view = v;
     document.querySelectorAll('#bottomNav button').forEach((b: any) => b.classList.toggle('active', b.dataset.v === v));
@@ -819,53 +818,6 @@ const UI = {
     const [pmin, pmax] = g.p;
     const inst = GAME_INSTRUCTIONS[this.curGame];
     const goalText = (inst && inst.goal) || g.rules || '';
-
-    let boardSelectHtml = '';
-    if (this.curGame === 'candyland') {
-      const selectedBid = this.sugarTrailBoard || '1984';
-      const boards = [
-        {
-          id: '1984',
-          name: '1984 Classic Edition',
-          desc: 'Iconic board with Peppermint Forest, Gumdrop Mountains, and Candy Castle',
-          badge: 'Classic Edition',
-          src: '/src/assets/images/candyland_classic_board_sugartrail.jpg'
-        },
-        {
-          id: 'modern',
-          name: 'Modern Edition',
-          desc: 'Bright vibrant 3D candy kingdom with rainbow sweets and treats',
-          badge: 'Modern Edition',
-          src: '/src/assets/images/candyland_modern_board_sugartrail.jpg'
-        },
-        {
-          id: '1962',
-          name: '1962 Vintage Edition',
-          desc: 'Vintage storybook confectionery kingdom with nostalgic charm',
-          badge: 'Vintage Edition',
-          src: '/src/assets/images/candyland_vintage_board_sugartrail.jpg'
-        }
-      ];
-      boardSelectHtml = `
-        <div class="card board-selection-card">
-          <div style="font-weight:800; color:var(--gold2); font-size:13px; margin-bottom:10px;">🎨 CHOOSE YOUR CANDY LAND BOARD</div>
-          <div class="board-choice-grid">
-            ${boards.map(b => `
-              <div class="board-choice-item ${b.id === selectedBid ? 'selected' : ''}" data-bid="${b.id}">
-                <div class="board-thumb-wrap">
-                  <img src="${b.src}" class="board-thumb" alt="${esc(b.name)}" />
-                  <span class="board-pill-badge">${esc(b.badge)}</span>
-                </div>
-                <div class="board-choice-info">
-                  <div class="board-choice-name">${esc(b.name)}</div>
-                  <div class="board-choice-desc">${esc(b.desc)}</div>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      `;
-    }
 
     let scrabbleChampCard = '';
     if (this.curGame === 'scrabble') {
@@ -961,7 +913,6 @@ const UI = {
       + '  <div class="muted" style="margin-bottom:10px; line-height:1.4;">' + esc(goalText) + '</div>'
       + '  <button class="btn secondary small rules-btn" type="button" data-gid="' + this.curGame + '" style="margin:0;">📖 View Full Instructions &amp; Tips</button>'
       + '</div>'
-      + boardSelectHtml
       + scrabbleChampCard
       + pictionaryLevelCard
       + '<div class="card"><h3>How do you want to play?</h3>'
@@ -998,11 +949,6 @@ const UI = {
         localStorage.setItem('pictionary_level', String(lv));
         this.gameMode(v);
       };
-    });
-    v.querySelectorAll('.board-choice-item').forEach((b: any) => b.onclick = () => {
-      Sound.click();
-      this.sugarTrailBoard = b.dataset.bid;
-      this.gameMode(v);
     });
     v.querySelectorAll('[data-m]').forEach((b: any) => b.onclick = () => {
       Sound.click();
@@ -1853,7 +1799,7 @@ const GAME_INSTRUCTIONS: Record<string, { title: string; icon: string; goal: str
     ]
   },
   candyland: {
-    title: 'Candy Land',
+    title: 'Sugar Trail',
     icon: '🍬',
     goal: 'Race your Gingerbread Pawn along the colorful rainbow path across the sweet candy wonderland to the Candy Castle 🏰!',
     steps: [
@@ -1866,7 +1812,7 @@ const GAME_INSTRUCTIONS: Record<string, { title: string; icon: string; goal: str
       '7. 🏰 Candy Castle: First gingerbread pawn to reach the Candy Castle at the end of the board wins the game!'
     ],
     tips: [
-      'Switch between the 1984 Classic Edition, Modern Edition, and 1962 Vintage Edition boards anytime!',
+      'Watch for the glowing square — it shows exactly where your pawn will land!',
       'Landmark and double color cards can trigger exciting comebacks!'
     ]
   },
@@ -3460,7 +3406,7 @@ stdInit('chutes', {
   }
 });
 
-/* ================= CANDY LAND (SUGAR TRAIL REAL GAME BOARDS) ================= */
+/* ================= SUGAR TRAIL ================= */
 const CANDYLAND_COLORS = [
   { id: 'red', name: 'RED', hex: '#e74c3c' },
   { id: 'purple', name: 'PURPLE', hex: '#9b59b6' },
@@ -3479,42 +3425,14 @@ const CANDYLAND_LANDMARKS = [
   { id: 'molasses', name: 'Molasses Swamp', icon: '🍮', sq: 58, hex: '#e67e22', desc: 'Warm gooey sweet syrup pool' }
 ];
 
-const CANDYLAND_BOARDS: Record<string, { id: string; name: string; year: string; desc: string; badge: string; src: string }> = {
-  '1984': {
-    id: '1984',
-    name: '1984 Classic Edition',
-    year: '1984',
-    desc: 'Iconic board with Peppermint Forest, Gumdrop Mountains, and Candy Castle',
-    badge: 'Classic Edition',
-    src: '/src/assets/images/candyland_classic_board_sugartrail.jpg'
-  },
-  'modern': {
-    id: 'modern',
-    name: 'Modern Edition',
-    year: '2010',
-    desc: 'Bright vibrant 3D candy kingdom with rainbow sweets and treats',
-    badge: 'Modern Edition',
-    src: '/src/assets/images/candyland_modern_board_sugartrail.jpg'
-  },
-  '1962': {
-    id: '1962',
-    name: '1962 Vintage Edition',
-    year: '1962',
-    desc: 'Vintage storybook confectionery kingdom with nostalgic charm',
-    badge: 'Vintage Edition',
-    src: '/src/assets/images/candyland_vintage_board_sugartrail.jpg'
-  }
-};
-
 stdInit('candyland', {
-  name: 'Candy Land',
+  name: 'Sugar Trail',
   icon: '🍬',
   desc: 'Sweet rainbow color race',
   p: [2, 4],
   payout: PAYOUTS.candyland,
-  rules: 'Candy Land rules: All gingerbread pawns start at the START line. Draw single or double color cards to advance to matching color spaces ahead! Special cards fly you directly to sweet landmarks. Take shortcuts across Rainbow Trail and Gumdrop Pass. First player to reach Candy Castle wins!',
+  rules: 'Sugar Trail rules: All gingerbread pawns start at the START line. Draw single or double color cards to advance to matching color spaces ahead! Special cards fly you directly to sweet landmarks. Take shortcuts across Rainbow Trail and Gumdrop Pass. First player to reach Candy Castle wins!',
   COLORS: CANDYLAND_COLORS,
-  BOARDS: CANDYLAND_BOARDS,
   LANDMARKS: CANDYLAND_LANDMARKS,
   PLAYER_PIECES: [
     { name: 'Red Pawn', color: '#ef4444', border: '#b91c1c' },
@@ -3609,7 +3527,6 @@ stdInit('candyland', {
   newState(C: any) {
     return {
       turn: 0,
-      boardId: UI.sugarTrailBoard || '1984',
       pos: C.names.map(() => 0), // All players start at Square 0 (Square 1 / START line)
       track: this.buildTrack(),
       deck: this.buildDeck(),
@@ -3717,8 +3634,6 @@ stdInit('candyland', {
     const curPlayer = S.turn;
     const activeName = C.seatName(curPlayer);
     const canDraw = C.mine() && !S.over && !S.drawing && !S.animating;
-    const curBoardId = S.boardId || UI.sugarTrailBoard || '1984';
-    const curBoard = CANDYLAND_BOARDS[curBoardId] || CANDYLAND_BOARDS['1984'];
 
     // 1. Players Status Bar
     let playersBar = '<div class="candyland-players-bar">';
@@ -3833,27 +3748,18 @@ stdInit('candyland', {
       cardContent = `
         <div class="candyland-drawn-card deck-back" title="Card Deck">
           <span style="font-size:32px;">🍬</span>
-          <div class="candyland-card-title" style="color:#ffffff;">CANDY LAND</div>
+          <div class="candyland-card-title" style="color:#ffffff;">SUGAR TRAIL</div>
           <div class="candyland-card-desc" style="color:#f472b6;">Tap Draw Card to play</div>
         </div>
       `;
     }
 
     // Assemble Full Table View
-    let h = turnBanner(C) + '<h2>🍬 Candy Land</h2>'
+    let h = turnBanner(C) + '<h2>🍬 Sugar Trail</h2>'
       + '<div class="candyland-game-table">'
       +   playersBar
-      + '  <div class="candyland-board-switch-bar">'
-      + '    <span class="candyland-switch-title">🎨 Board Edition:</span>'
-      + '    <div class="candyland-switch-group">'
-      + '      <button class="candyland-switch-pill ' + (curBoardId === '1984' ? 'active' : '') + '" data-bid="1984" title="1984 Classic Edition">1984 Classic</button>'
-      + '      <button class="candyland-switch-pill ' + (curBoardId === 'modern' ? 'active' : '') + '" data-bid="modern" title="Modern Edition">Modern</button>'
-      + '      <button class="candyland-switch-pill ' + (curBoardId === '1962' ? 'active' : '') + '" data-bid="1962" title="1962 Vintage Edition">1962 Vintage</button>'
-      + '    </div>'
-      + '  </div>'
       + '  <div class="candyland-board-container">'
       + '    <div class="candyland-board-aspect">'
-      + '      <img src="' + curBoard.src + '" class="candyland-board-img" alt="' + esc(curBoard.name) + '" />'
       +        squaresHtml
       + '    </div>'
       + '  </div>'
@@ -3867,16 +3773,6 @@ stdInit('candyland', {
       + '</div>';
 
     R.innerHTML = h;
-
-    // Board Edition Switcher listener
-    R.querySelectorAll('.candyland-switch-pill').forEach((btn: any) => {
-      btn.onclick = () => {
-        Sound.click();
-        S.boardId = btn.dataset.bid;
-        UI.sugarTrailBoard = btn.dataset.bid;
-        C.update(() => {});
-      };
-    });
 
     // Attach Draw Card listener
     const db = $('#drawBtn');

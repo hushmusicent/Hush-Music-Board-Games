@@ -853,7 +853,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   }
 }
 
-/* ================= CANDY LAND REAL BOARDS & GINGERBREAD PAWNS ================= */
+/* ================= SUGAR TRAIL & GINGERBREAD PAWNS ================= */
 .candyland-game-table {
   background: radial-gradient(circle at 50% 20%, #2a152e 0%, #150917 100%);
   border: 2px solid rgba(244, 114, 182, 0.35);
@@ -926,56 +926,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
 }
 
 /* In-game Board Edition Switcher */
-.candyland-board-switch-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  background: rgba(0, 0, 0, 0.3);
-  padding: 6px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.candyland-switch-title {
-  font-size: 11px;
-  font-weight: 800;
-  color: #f472b6;
-  letter-spacing: 0.5px;
-}
-
-.candyland-switch-group {
-  display: flex;
-  gap: 6px;
-}
-
-.candyland-switch-pill {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #e2e8f0;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.candyland-switch-pill:hover {
-  background: rgba(244, 114, 182, 0.2);
-  border-color: #f472b6;
-}
-
-.candyland-switch-pill.active {
-  background: #db2777;
-  color: #ffffff;
-  border-color: #f472b6;
-  box-shadow: 0 0 10px rgba(219, 39, 119, 0.5);
-}
-
-/* Candy Land Board Viewport */
+/* Sugar Trail Board Viewport */
 .candyland-board-container {
   width: 100%;
   border-radius: 14px;
@@ -990,14 +941,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   aspect-ratio: 1200 / 896;
   overflow: hidden;
   user-select: none;
-}
-
-.candyland-board-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  filter: brightness(1) contrast(1.03);
+  background: linear-gradient(160deg, #3b0f2e 0%, #57173f 45%, #2a0a24 100%);
 }
 
 /* Color Squares on the Board */
@@ -1363,87 +1307,6 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   border: 1px solid rgba(255, 255, 255, 0.1);
   text-align: center;
   max-width: 480px;
-}
-
-/* Board Selection Card on Game Mode Screen */
-.board-selection-card {
-  margin-bottom: 14px;
-}
-
-.board-choice-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-
-.board-choice-item {
-  background: rgba(255, 255, 255, 0.04);
-  border: 2px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  flex-direction: column;
-}
-
-.board-choice-item:hover {
-  border-color: #f472b6;
-  transform: translateY(-2px);
-}
-
-.board-choice-item.selected {
-  border-color: #ec4899;
-  box-shadow: 0 0 16px rgba(236, 72, 153, 0.45);
-  background: rgba(236, 72, 153, 0.1);
-}
-
-.board-thumb-wrap {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1200 / 896;
-  overflow: hidden;
-  background: #000;
-}
-
-.board-thumb {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.board-pill-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  background: rgba(0, 0, 0, 0.75);
-  color: #f472b6;
-  border: 1px solid #f472b6;
-  font-size: 10px;
-  font-weight: 800;
-  padding: 2px 7px;
-  border-radius: 10px;
-  backdrop-filter: blur(4px);
-}
-
-.board-choice-info {
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.board-choice-name {
-  font-size: 12px;
-  font-weight: 800;
-  color: #ffffff;
-}
-
-.board-choice-desc {
-  font-size: 10px;
-  color: var(--muted);
-  line-height: 1.3;
 }
 
 /* ================= GET HOME (TROUBLE) OFFICIAL BOARD STYLING ================= */
