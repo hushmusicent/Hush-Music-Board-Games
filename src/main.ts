@@ -1987,7 +1987,7 @@ const GAME_INSTRUCTIONS: Record<string, { title: string; icon: string; goal: str
     ]
   },
   guesswho: {
-    title: 'Guess Who?',
+    title: 'Guess?',
     icon: '🕵️',
     goal: 'Deduce which of the 24 characters your opponent secretly picked before they guess yours.',
     steps: [
@@ -12104,7 +12104,7 @@ stdInit('pictionary', {
   }
 });
 
-/* ================= GUESS WHO ================= */
+/* ================= GUESS? ================= */
 interface GwAttr {
   id: string;
   category: 'features' | 'hair' | 'gender';
@@ -12144,7 +12144,7 @@ function getGwDeck(C: any, S: any): { deck: GuessWhoChar[]; edition: DeckEdition
 }
 
 stdInit('guesswho', {
-  name: 'Guess Who?',
+  name: 'Guess?',
   icon: '🕵️',
   desc: '20 questions face-off with authentic cards & guessing',
   p: [2, 2],
@@ -12162,7 +12162,7 @@ stdInit('guesswho', {
         + '<div class="gw-container gw-select-screen">'
         + '<div class="card center" style="padding:24px 16px;">'
         + '<div style="font-size:46px; margin-bottom:4px;">🕵️</div>'
-        + '<h2 style="font-size:26px; margin:4px 0 6px;">Guess Who?</h2>'
+        + '<h2 style="font-size:26px; margin:4px 0 6px;">Guess?</h2>'
         + '<div class="muted" style="max-width:540px; margin:0 auto 16px; font-size:14px; line-height:1.4;">'
         + 'Select which card edition you want to play! Each match will <b>randomly deal you a secret character</b> from the deck.'
         + '</div>'
