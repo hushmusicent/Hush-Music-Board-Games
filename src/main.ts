@@ -1892,7 +1892,7 @@ const GAME_INSTRUCTIONS: Record<string, { title: string; icon: string; goal: str
     ]
   },
   life: {
-    title: 'The Game of Life',
+    title: 'The Game of Choices',
     icon: '🚗',
     goal: 'Navigate the official winding Life board from Start (College or Career) through Marriage, Houses, Children, and Careers to retire at Millionaire Estates with the largest total fortune!',
     steps: [
@@ -7403,7 +7403,7 @@ stdInit('payday', {
   }
 });
 
-/* ================= THE GAME OF LIFE (Official Board Game Edition) ================= */
+/* ================= THE GAME OF CHOICES ================= */
 const LIFE_CAR_COLORS = ['#dc2626', '#2563eb', '#16a34a', '#d97706']; // Cherry Red, Royal Blue, Forest Green, Sunburst Yellow
 const LIFE_CAR_NAMES = ['Red Wagon', 'Blue Cruiser', 'Green Van', 'Yellow Sedan'];
 
@@ -7632,7 +7632,7 @@ function renderLifeSpinnerSvg(currentNum: number, spinning: boolean): string {
   return s;
 }
 
-// Fisher-Yates shuffle for Game of Life card decks
+// Fisher-Yates shuffle for Game of Choices card decks
 function shuffleLifeDeck<T>(items: T[]): T[] {
   const arr = [...items];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -7730,12 +7730,12 @@ function renderLifeDeckPilesHtml(S: any): string {
 }
 
 stdInit('life', {
-  name: 'The Game of Life',
+  name: 'The Game of Choices',
   icon: '🚗',
   desc: 'Official Milton Bradley Board Edition',
   p: [2, 4],
   payout: PAYOUTS.life,
-  rules: 'Official The Game of Life: Choose College or Career path, spin the 1–10 Rainbow Wheel, advance your station wagon loaded with blue and pink pegs for your family, buy homes, stop for milestones (Graduation, Marriage, Houses), collect Pay Days, and retire at Millionaire Estates with the largest total fortune!',
+  rules: 'Official The Game of Choices: Choose College or Career path, spin the 1–10 Rainbow Wheel, advance your station wagon loaded with blue and pink pegs for your family, buy homes, stop for milestones (Graduation, Marriage, Houses), collect Pay Days, and retire at Millionaire Estates with the largest total fortune!',
   newState(C: any) {
     return {
       turn: 0,
@@ -7761,7 +7761,7 @@ stdInit('life', {
       activeModal: null as any,
       spinning: false,
       over: false,
-      msg: 'Welcome to The Game of Life! Choose your starting path.'
+      msg: 'Welcome to The Game of Choices! Choose your starting path.'
     };
   },
   ensureCash(S: any, playerIdx: number, neededAmt: number, C: any) {
@@ -7784,7 +7784,7 @@ stdInit('life', {
     // Official Milton Bradley 3D Header Banner
     h += '<div class="life-header-banner">';
     h += '<div class="life-mb-badge"><span>🎲</span> MILTON BRADLEY OFFICIAL 3D EDITION</div>';
-    h += '<div class="life-logo-title">THE GAME OF LIFE</div>';
+    h += '<div class="life-logo-title">THE GAME OF CHOICES</div>';
     h += '<div class="life-logo-sub">Classic Serpentine Highway · Official Station Wagons &amp; Pegs</div>';
     h += '</div>';
 
