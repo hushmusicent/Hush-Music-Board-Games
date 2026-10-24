@@ -566,6 +566,11 @@ const Voice = {
   myUid: '',
   peers: {} as Record<string, any>,
   present: {} as Record<string, boolean>,
+  presenceInfo: {} as Record<string, any>,
+  ctx: null as any,
+  localAnalyser: null as any,
+  _localSrc: null as any,
+  speakTimer: null as any,
   _off: [] as Array<() => void>,
   configured() {
     // Voice needs exactly what online PvP needs: Firebase. No keys to paste.
@@ -591,6 +596,20 @@ const Voice = {
       this.session = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
       // Capture ONCE and share that one stream with every peer connection.
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // AudioContext, created inside the tap gesture: remote call audio is
+      // played through it (media/speaker path) instead of an <audio>
+      // element, which Android Chrome routes to the earpiece like a phone
+      // call — the "connected but no sound" symptom. The same context feeds
+      // the speaking analyser (local stream only; never looped to output).
+      try {
+        const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+        this.ctx = new AC();
+        if (this.ctx.resume) { const r = this.ctx.resume(); if (r && r.catch) r.catch(() => {}); }
+        this._localSrc = this.ctx.createMediaStreamSource(this.stream);
+        this.localAnalyser = this.ctx.createAnalyser();
+        this.localAnalyser.fftSize = 2048;
+        this._localSrc.connect(this.localAnalyser);
+      } catch (e) { console.warn(e); }
       const pres = this._presRef();
       await pres.set({ name: Auth.user.username || 'Player', session: this.session, muted: false, ts: Date.now() });
       try { pres.onDisconnect().remove(); } catch (e) {}
@@ -599,23 +618,29 @@ const Voice = {
         const uid = String(snap.key);
         const v = snap.val() || {};
         this.present[uid] = true;
+        this.presenceInfo[uid] = { name: v.name || 'Player', muted: !!v.muted };
         if (uid !== this.myUid) this._onPeerSeen(uid, v.session);
         this._updateCount();
+        this._renderPanelRows();
       };
       const chgH = (snap: any) => {
         const uid = String(snap.key);
         const v = snap.val() || {};
         if (uid === this.myUid) return;
+        this.presenceInfo[uid] = { name: v.name || 'Player', muted: !!v.muted };
         // Session changed = that player rejoined: drop the old peer, start clean.
         const old = this.peers[uid];
         if (old && old.session !== v.session) this._dropPeer(uid);
         this._onPeerSeen(uid, v.session);
+        this._renderPanelRows();
       };
       const remH = (snap: any) => {
         const uid = String(snap.key);
         delete this.present[uid];
+        delete this.presenceInfo[uid];
         if (uid !== this.myUid) this._dropPeer(uid);
         this._updateCount();
+        this._renderPanelRows();
       };
       pr.on('child_added', addH);
       pr.on('child_changed', chgH);
@@ -629,6 +654,8 @@ const Voice = {
       if (mb) mb.classList.remove('hidden');
       this._micIcon();
       this._updateCount();
+      this._setPanelVisible(true);
+      this._startSpeakPoll();
       updateVoiceHdrBtn();
       toast('Voice connected — talk to your opponents');
       return true;
@@ -662,16 +689,24 @@ const Voice = {
         try { this._sigRef(pair).child('cands').push({ from: this.myUid, session: this.session, cand: ev.candidate.toJSON() }); } catch (e) {}
       }
     };
-    // Audio elements are pinned in a container outside #view so UI
-    // re-renders never detach them (detaching kills audio).
+    // Remote audio plays through the AudioContext (speaker path), not an
+    // <audio> element — Android Chrome routes <audio> call audio to the
+    // earpiece, which reads as "connected but no sound". The same source
+    // feeds a speaking analyser for the voice panel.
     pc.ontrack = (ev: any) => {
-      const el = this._audioEl(uid);
       try {
-        if (ev.streams && ev.streams[0]) el.srcObject = ev.streams[0];
-        else { const st = new MediaStream(); st.addTrack(ev.track); el.srcObject = st; }
-        const p = el.play();
-        if (p && p.catch) p.catch(() => {});
-      } catch (e) {}
+        const rs = (ev.streams && ev.streams[0]) || (() => { const st = new MediaStream(); st.addTrack(ev.track); return st; })();
+        peer.remoteStream = rs;
+        if (this.ctx) {
+          const rsrc = this.ctx.createMediaStreamSource(rs);
+          rsrc.connect(this.ctx.destination);
+          const ran = this.ctx.createAnalyser();
+          ran.fftSize = 2048;
+          rsrc.connect(ran);
+          peer.audioNodes = { src: rsrc, analyser: ran };
+        }
+        this._renderPanelRows();
+      } catch (e) { console.warn(e); }
     };
     const sig = this._sigRef(pair);
     const valH = async (snap: any) => {
@@ -723,39 +758,21 @@ const Voice = {
       try { peer.pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {}); } catch (e) {}
     });
   },
-  _audioEl(uid: string) {
-    let wrap = document.getElementById('voiceAudioWrap');
-    if (!wrap) {
-      wrap = document.createElement('div');
-      wrap.id = 'voiceAudioWrap';
-      wrap.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0.01;overflow:hidden;pointer-events:none;';
-      document.body.appendChild(wrap);
-    }
-    let el = document.getElementById('voiceAudio-' + uid) as HTMLAudioElement;
-    if (!el) {
-      el = document.createElement('audio');
-      el.id = 'voiceAudio-' + uid;
-      (el as any).autoplay = true;
-      (el as any).playsInline = true;
-      wrap.appendChild(el);
-    }
-    return el;
-  },
   _dropPeer(uid: string) {
     const peer = this.peers[uid];
     if (!peer) return;
     try { if (peer._off) peer._off(); } catch (e) {}
     try { peer.pc.close(); } catch (e) {}
-    const el = document.getElementById('voiceAudio-' + uid);
-    if (el) el.remove();
+    try { if (peer.audioNodes) peer.audioNodes.src.disconnect(); } catch (e) {}
     delete this.peers[uid];
     this._updateCount();
+    this._renderPanelRows();
   },
   _micIcon() {
     const mb = $('#micBtn');
-    if (!mb) return;
-    mb.textContent = this.micMuted ? '🚫' : '🎤';
-    mb.classList.toggle('off', this.micMuted);
+    if (mb) { mb.textContent = this.micMuted ? '🚫' : '🎤'; mb.classList.toggle('off', this.micMuted); }
+    const pm = document.getElementById('voicePanelMic');
+    if (pm) { pm.textContent = this.micMuted ? '🚫' : '🎤'; pm.classList.toggle('off', this.micMuted); }
   },
   _updateCount() {
     let c = document.getElementById('voiceCount');
@@ -772,6 +789,8 @@ const Voice = {
     const n = Object.keys(this.present).length;
     c.textContent = n + ' in call';
     c.classList.toggle('hidden', !this.active || n === 0);
+    const pc2 = document.getElementById('voicePanelCount');
+    if (pc2) pc2.textContent = n + ' in call';
   },
   toggleMic() {
     if (!this.active || !this.stream) return;
@@ -779,6 +798,98 @@ const Voice = {
     try { this.stream.getAudioTracks().forEach((t: any) => { t.enabled = !this.micMuted; }); } catch (e) {}
     try { this._presRef().update({ muted: this.micMuted }); } catch (e) {}
     this._micIcon();
+    this._renderPanelRows();
+  },
+  // Hand-game-style voice panel: fixed above the bottom nav (so game
+  // re-renders never wipe it), with a row per player and a live Speaking
+  // indicator driven by the analysers. If a remote row lights up while you
+  // hear nothing, audio is arriving and the problem is playout, not the call.
+  _ensurePanel() {
+    let p = document.getElementById('voicePanel');
+    if (p) return p;
+    p = document.createElement('div');
+    p.id = 'voicePanel';
+    p.className = 'hidden';
+    const nav = document.getElementById('bottomNav');
+    p.style.cssText = 'position:fixed;left:10px;right:10px;bottom:' + ((nav ? nav.offsetHeight : 60) + 8) + 'px;z-index:90;';
+    p.innerHTML = '<div class="card" style="margin:0">'
+      + '<div class="row" style="align-items:center;gap:8px">'
+      + '<span style="font-weight:800">🎤 Voice Connected</span>'
+      + '<span class="pill gold" id="voicePanelCount">1 in call</span>'
+      + '<span style="flex:1"></span>'
+      + '<button class="iconbtn" id="voicePanelMic" title="Mute microphone">🎤</button>'
+      + '<button class="iconbtn" id="voicePanelLeave" title="Leave voice chat">✕</button>'
+      + '<button class="iconbtn" id="voicePanelCollapse" title="Collapse">⌄</button>'
+      + '</div><div id="voicePanelBody" style="margin-top:6px"></div></div>';
+    document.body.appendChild(p);
+    const mic = p.querySelector('#voicePanelMic');
+    if (mic) mic.addEventListener('click', () => this.toggleMic());
+    const lv = p.querySelector('#voicePanelLeave');
+    if (lv) lv.addEventListener('click', () => this.leave());
+    const col = p.querySelector('#voicePanelCollapse');
+    if (col) col.addEventListener('click', () => {
+      const b = p.querySelector('#voicePanelBody') as HTMLElement;
+      if (!b) return;
+      const hid = b.classList.toggle('hidden');
+      col.textContent = hid ? '⌃' : '⌄';
+    });
+    return p;
+  },
+  _setPanelVisible(show: boolean) {
+    const p = this._ensurePanel();
+    p.classList.toggle('hidden', !show);
+    if (show) this._renderPanelRows();
+  },
+  _panelRow(uid: string, name: string, muted: boolean) {
+    return '<div class="row" style="align-items:center;gap:8px;padding:3px 0"><span>🎧</span><span style="flex:1">' + esc(name) + '</span><span class="vp-speak" data-vp-speak="' + esc(uid) + '"><span class="vp-bars"><i></i><i></i><i></i></span><span class="vp-label">' + (muted ? '🚫 Muted' : '') + '</span></span></div>';
+  },
+  _renderPanelRows() {
+    const body = document.getElementById('voicePanelBody');
+    if (!body) return;
+    const rows: string[] = [];
+    const me = this.presenceInfo[this.myUid];
+    if (me) rows.push(this._panelRow(this.myUid, me.name + ' (You)', !!me.muted));
+    Object.keys(this.presenceInfo).forEach(uid => {
+      if (uid === this.myUid) return;
+      const p = this.presenceInfo[uid];
+      rows.push(this._panelRow(uid, p.name || 'Player', !!p.muted));
+    });
+    body.innerHTML = rows.join('') || '<div class="muted">Waiting for others to join voice…</div>';
+  },
+  _speakLevel(an: any) {
+    if (!an) return 0;
+    try {
+      const buf = new Uint8Array(an.fftSize);
+      an.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      return Math.sqrt(sum / buf.length);
+    } catch (e) { return 0; }
+  },
+  _startSpeakPoll() {
+    this._stopSpeakPoll();
+    this.speakTimer = setInterval(() => {
+      if (!this.active) return;
+      const setRow = (uid: string, speaking: boolean, hasAudio: boolean, muted: boolean) => {
+        const el = document.querySelector('[data-vp-speak="' + uid + '"]');
+        if (!el) return;
+        const lab = el.querySelector('.vp-label');
+        if (muted) { el.classList.remove('on'); if (lab) lab.textContent = '🚫 Muted'; }
+        else if (!hasAudio) { el.classList.remove('on'); if (lab) lab.textContent = ''; }
+        else { el.classList.toggle('on', speaking); if (lab) lab.textContent = speaking ? 'Speaking' : ''; }
+      };
+      setRow(this.myUid, !this.micMuted && this._speakLevel(this.localAnalyser) > 0.02, !!this.localAnalyser, this.micMuted);
+      Object.keys(this.peers).forEach(uid => {
+        const p = this.peers[uid];
+        const an = p.audioNodes ? p.audioNodes.analyser : null;
+        const muted = !!(this.presenceInfo[uid] && this.presenceInfo[uid].muted);
+        setRow(uid, !muted && this._speakLevel(an) > 0.02, !!an, muted);
+      });
+    }, 150);
+  },
+  _stopSpeakPoll() {
+    if (this.speakTimer) { try { clearInterval(this.speakTimer); } catch (e) {} }
+    this.speakTimer = null;
   },
   leave() {
     this._off.forEach(f => { try { f(); } catch (e) {} });
@@ -787,6 +898,13 @@ const Voice = {
     uids.forEach(u => this._dropPeer(u));
     this.peers = {};
     this.present = {};
+    this.presenceInfo = {};
+    this._stopSpeakPoll();
+    try { if (this._localSrc) this._localSrc.disconnect(); } catch (e) {}
+    try { if (this.ctx && this.ctx.close) this.ctx.close(); } catch (e) {}
+    this.ctx = null; this.localAnalyser = null; this._localSrc = null;
+    const vp = document.getElementById('voicePanel');
+    if (vp) vp.classList.add('hidden');
     if (this.stream) { try { this.stream.getTracks().forEach((t: any) => t.stop()); } catch (e) {} }
     this.stream = null;
     // Best effort: remove my presence + the signal docs I took part in, so
