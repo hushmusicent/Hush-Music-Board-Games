@@ -1910,9 +1910,9 @@ const GAME_INSTRUCTIONS: Record<string, { title: string; icon: string; goal: str
     ]
   },
   jumanji: {
-    title: 'Jumanji',
+    title: 'Safari',
     icon: '🦁',
-    goal: 'Be the first player to reach the center of the board and call out "JUMANJI!" But beware: if the 10-slot Doomsday Grid fills with danger cards, all players lose to the jungle!',
+    goal: 'Be the first player to reach the center of the board and call out "SAFARI!" But beware: if the 10-slot Doomsday Grid fills with danger cards, all players lose to the jungle!',
     steps: [
       'Roll & Move: On your turn, roll the number die to advance your carved animal pawn (Monkey, Rhino, Crocodile, or Elephant) along your 28-square bone stepping stone track from Space 1 to the Center (Space 28).',
       'Blank Spaces: Draw a Danger Card into the center red decoder lens! The secret rhyme, rescue symbol (Saber, Rope, Raft, Axe, Racquet, or Door), and movement number are revealed. The 8-second timer flips!',
@@ -1920,7 +1920,7 @@ const GAME_INSTRUCTIONS: Record<string, { title: string; icon: string; goal: str
       'Wait for 5 or 8 Spaces: "In the jungle you must wait, until the dice read 5 or 8!" You are trapped until any player rolls a 5 or an 8. Any other roll moves you backward 1 space!',
       'Rhino Spaces: Place the stone Rhinoceros in front of any player to block their progress. Blocked players must roll an even number (2, 4, 6) to pass!',
       'Jungle Spaces: All players are trapped! Everyone rolls rescue dice. If all succeed, everyone moves forward 1 space. If anyone fails, the card goes to the Doomsday Grid!',
-      'Winning Jumanji: The first player to reach the central wooden circle (Space 28) by exact count and call out "JUMANJI!" wins the game!'
+      'Winning Safari: The first player to reach the central wooden circle (Space 28) by exact count and call out "SAFARI!" wins the game!'
     ],
     tips: [
       'Cooperate on rescue rolls—helping fellow players succeed keeps dangerous cards off the Doomsday Grid.',
@@ -2016,7 +2016,7 @@ function shortInstruction(gameId: string): string {
     monopoly: 'Roll dice to buy world nations, collect revenue, draw ⚡ Risks & 💎 World Riches, and bankrupt rival enterprises!',
     payday: 'Roll the 31-day calendar! Draw Mail 📬 & Deals 🤝, sell to Buyers 👩‍💼, roll 6 for the Pot 💰, and survive BILLS!!!',
     life: 'Spin the 1–10 Rainbow Wheel! Choose College or Career, marry, buy houses, add pegs to your car, and retire rich!',
-    jumanji: 'Official 1995 Jumanji: Roll along bone stepping stone paths, decode danger cards in the center dome, roll rescue dice before the timer runs out, and avoid filling the 10-slot Doomsday Grid!',
+    jumanji: 'Official Safari: Roll along bone stepping stone paths, decode danger cards in the center dome, roll rescue dice before the timer runs out, and avoid filling the 10-slot Doomsday Grid!',
     clue: 'Suggest suspect/weapon/room combos to gather clues. Narrow down your notes and Accuse!',
     scrabble: 'Tap a start square, choose Across or Down, and spell valid words from your rack.',
     pictionary: 'Guess the sketch before the timer runs out, or draw with your finger for friends!',
@@ -8745,7 +8745,7 @@ stdInit('life', {
   }
 });
 
-/* ================= 1995 OFFICIAL JUMANJI BOARD GAME ================= */
+/* ================= 1995 OFFICIAL SAFARI BOARD GAME ================= */
 
 // SVG vector renderer for the 4 authentic movie animal pawns and Rhino blocker
 function renderMoviePawnSvg(pawnIdx: number | 'rhino_blocker', size = 26): string {
@@ -8844,7 +8844,7 @@ const MB_TRACK_LEN = 28;
 // Space definitions for the authentic 28-square board
 function getMbSpaceMeta(s: number): { type: 'start' | 'blank' | 'wait58' | 'rhino' | 'jungle' | 'goal'; label: string; icon: string } {
   if (s <= 1) return { type: 'start', label: 'START', icon: '★' };
-  if (s >= MB_TRACK_LEN) return { type: 'goal', label: 'JUMANJI', icon: '🌟' };
+  if (s >= MB_TRACK_LEN) return { type: 'goal', label: 'SAFARI', icon: '🌟' };
   if (s === 5 || s === 12 || s === 19) return { type: 'wait58', label: 'WAIT 5/8', icon: '⏳' };
   if (s === 8 || s === 15 || s === 22) return { type: 'rhino', label: 'RHINO', icon: '🦏' };
   if (s === 10 || s === 17 || s === 24) return { type: 'jungle', label: 'JUNGLE', icon: '🌿' };
@@ -8852,12 +8852,12 @@ function getMbSpaceMeta(s: number): { type: 'start' | 'blank' | 'wait58' | 'rhin
 }
 
 stdInit('jumanji', {
-  name: 'Jumanji',
+  name: 'Safari',
   icon: '🦁',
   desc: 'Official Edition',
   p: [2, 4],
   payout: PAYOUTS.jumanji,
-  rules: 'Official Jumanji: Advance your carved animal pawn (Monkey, Rhino, Crocodile, Elephant) along your 28-square ivory stepping stone path. On Blank Spaces, draw a Danger Card into the center red decoder lens! Fellow players roll Rescue Dice before the 8-second sand timer expires (Hourglass ⏳ is Wild!). If saved, fellow players advance by the card\'s number. If anyone fails, the card goes to the Doomsday Grid and the active player moves backward. On "Wait for 5 or 8" spaces, you are trapped until someone rolls a 5 or an 8! If all 10 Doomsday Grid slots fill up, the jungle wins and everyone loses. The first player to reach the center (Space 28) by exact count calls out "JUMANJI!" and wins!',
+  rules: 'Official Safari: Advance your carved animal pawn (Monkey, Rhino, Crocodile, Elephant) along your 28-square ivory stepping stone path. On Blank Spaces, draw a Danger Card into the center red decoder lens! Fellow players roll Rescue Dice before the 8-second sand timer expires (Hourglass ⏳ is Wild!). If saved, fellow players advance by the card\'s number. If anyone fails, the card goes to the Doomsday Grid and the active player moves backward. On "Wait for 5 or 8" spaces, you are trapped until someone rolls a 5 or an 8! If all 10 Doomsday Grid slots fill up, the jungle wins and everyone loses. The first player to reach the center (Space 28) by exact count calls out "SAFARI!" and wins!',
 
   newState(C: any) {
     const deck = shuffleLifeDeck([...MB_1995_DANGER_CARDS]);
@@ -8878,7 +8878,7 @@ stdInit('jumanji', {
       },
       lastDie: 0,
       pendingContinue: false,
-      msg: 'Welcome to JUMANJI. In the jungle you must wait... Roll the die to begin!',
+      msg: 'Welcome to SAFARI. In the jungle you must wait... Roll the die to begin!',
       over: false,
       winner: -1
     };
@@ -8939,7 +8939,7 @@ stdInit('jumanji', {
           if (meta.type === 'start') {
             h += `<span style="font-size:7px; font-weight:900; line-height:1;">START</span><span style="font-size:9px; line-height:1;">★</span>`;
           } else if (meta.type === 'goal') {
-            h += `<span style="font-size:7px; font-weight:900; line-height:1;">JUMANJI</span><span style="font-size:9px; line-height:1;">🌟</span>`;
+            h += `<span style="font-size:7px; font-weight:900; line-height:1;">SAFARI</span><span style="font-size:9px; line-height:1;">🌟</span>`;
           } else {
             h += `<span style="font-size:8px; line-height:1; opacity:0.85; font-weight:800;">${s}</span>`;
             if (meta.icon) h += `<span style="font-size:9.5px; line-height:1;">${meta.icon}</span>`;
@@ -8957,9 +8957,9 @@ stdInit('jumanji', {
 
     // Center Aztec Wooden Ring & Dark Green Mist Decoder Dome
     const dangerPulse = S.activeDanger ? 'pulsing' : '';
-    h += `<div class="mb-jumanji-center-bezel ${dangerPulse}" id="mbCenterEyeBtn" title="Jumanji Center Decoder Dome">`;
+    h += `<div class="mb-jumanji-center-bezel ${dangerPulse}" id="mbCenterEyeBtn" title="Safari Center Decoder Dome">`;
     h += '<div class="mb-jumanji-center-lens">';
-    h += '<div class="mb-jumanji-center-logo">JUMANJI</div>';
+    h += '<div class="mb-jumanji-center-logo">SAFARI</div>';
     h += '<div class="mb-jumanji-center-sub">DECODER DOME</div>';
     h += '</div>';
     h += '</div>';
@@ -9022,7 +9022,7 @@ stdInit('jumanji', {
           if (meta.type === 'start') {
             h += `<span style="font-size:7px; font-weight:900; line-height:1;">START</span><span style="font-size:9px; line-height:1;">★</span>`;
           } else if (meta.type === 'goal') {
-            h += `<span style="font-size:7px; font-weight:900; line-height:1;">JUMANJI</span><span style="font-size:9px; line-height:1;">🌟</span>`;
+            h += `<span style="font-size:7px; font-weight:900; line-height:1;">SAFARI</span><span style="font-size:9px; line-height:1;">🌟</span>`;
           } else {
             h += `<span style="font-size:8px; line-height:1; opacity:0.85; font-weight:800;">${s}</span>`;
             if (meta.icon) h += `<span style="font-size:9.5px; line-height:1;">${meta.icon}</span>`;
@@ -9123,14 +9123,14 @@ stdInit('jumanji', {
       h += '</div>'; // end card modal
     }
 
-    // Action Controls: Roll Number Die, Continue, or Shout JUMANJI
+    // Action Controls: Roll Number Die, Continue, or Shout SAFARI
     if (!S.over && !S.activeDanger) {
       const reachedGoal = S.pos.some((p: number) => p >= MB_TRACK_LEN);
       if (reachedGoal) {
         h += '<div class="card center" style="background:radial-gradient(circle,#b45309,#78350f); border:4px solid #fef08a; padding:18px;">';
-        h += '<h2>🌟 REACHED THE JUMANJI CENTER! 🌟</h2>';
+        h += '<h2>🌟 REACHED THE SAFARI CENTER! 🌟</h2>';
         h += '<p style="font-size:14px; margin-bottom:12px;">Call out the name to lift the consequences and win!</p>';
-        h += '<button class="jumanji-shout-btn" id="mbShoutJumanjiBtn">📣 CALL OUT "JUMANJI!"</button>';
+        h += '<button class="jumanji-shout-btn" id="mbShoutJumanjiBtn">📣 CALL OUT "SAFARI!"</button>';
         h += '</div>';
       } else if (S.pendingContinue) {
         h += '<div class="row" style="justify-content:center; align-items:center; gap:12px; margin-top:8px;">';
@@ -9160,8 +9160,8 @@ stdInit('jumanji', {
     if (S.over) {
       if (S.winner >= 0) {
         h += '<div class="card center" style="background:#064e3b; border:3px solid #10b981; color:#fff; padding:20px;">';
-        h += '<h2>🏆 JUMANJI HAS BEEN WON! 🏆</h2>';
-        h += `<p style="font-size:16px; margin:8px 0;"><b>${esc(C.seatName(S.winner))}</b> reached the center and called out JUMANJI!</p>`;
+        h += '<h2>🏆 SAFARI HAS BEEN WON! 🏆</h2>';
+        h += `<p style="font-size:16px; margin:8px 0;"><b>${esc(C.seatName(S.winner))}</b> reached the center and called out SAFARI!</p>`;
         h += '<p style="font-size:13px; color:#a7f3d0;">The jungle vanished and all adventurers escaped!</p>';
         h += '</div>';
       } else {
@@ -9267,7 +9267,7 @@ stdInit('jumanji', {
 
     if (targetPos === MB_TRACK_LEN) {
       Sound.jumanji();
-      S.msg = `🌟 ${esc(C.seatName(cur))} reached the center! Tap CALL OUT "JUMANJI!" to win!`;
+      S.msg = `🌟 ${esc(C.seatName(cur))} reached the center! Tap CALL OUT "SAFARI!" to win!`;
       S.pendingContinue = false;
       C.update(() => {});
       maybeCpu(C);
@@ -9494,9 +9494,9 @@ stdInit('jumanji', {
     Sound.jumanji();
     S.over = true;
     S.winner = S.turn;
-    S.msg = `🏆 JUMANJI! ${esc(C.seatName(S.winner))} called out the name! The game has vanished!`;
+    S.msg = `🏆 SAFARI! ${esc(C.seatName(S.winner))} called out the name! The game has vanished!`;
     C.update(() => {});
-    C.finish(S.winner, 'Called out JUMANJI and won the game! 🏆');
+    C.finish(S.winner, 'Called out SAFARI and won the game! 🏆');
   },
 
   cpu(C: any) {

@@ -3435,7 +3435,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   box-shadow: 0 0 3px #db2777;
 }
 
-/* ================= 1995 OFFICIAL JUMANJI BOARD GAME STYLES ================= */
+/* ================= 1995 OFFICIAL SAFARI BOARD GAME STYLES ================= */
 .mb-jumanji-wrap {
   display: flex;
   flex-direction: column;
@@ -3617,7 +3617,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   font-size: 11px;
 }
 
-/* Center Eye of Jumanji with Aztec Carved Wooden Bezel & Mist Dome */
+/* Center Eye of Safari with Aztec Carved Wooden Bezel & Mist Dome */
 .mb-jumanji-center-column {
   display: flex;
   flex-direction: column;
