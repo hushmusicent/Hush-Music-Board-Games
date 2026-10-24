@@ -1910,7 +1910,7 @@ const GAME_INSTRUCTIONS: Record<string, { title: string; icon: string; goal: str
     ]
   },
   jumanji: {
-    title: 'Jumanji (1995 Milton Bradley Edition)',
+    title: 'Jumanji',
     icon: '🦁',
     goal: 'Be the first player to reach the center of the board and call out "JUMANJI!" But beware: if the 10-slot Doomsday Grid fills with danger cards, all players lose to the jungle!',
     steps: [
@@ -3381,7 +3381,7 @@ stdInit('chutes', {
           S.log = `${pName} spun ${d} and moved to square ${nextPos}.`;
         }
       } else {
-        // Official Milton Bradley rule: Must reach square 100 by exact count
+        // Official rule: Must reach square 100 by exact count
         S.log = `${pName} spun ${d} (needed ${100 - startPos}) — stayed at ${startPos}.`;
         toast(`Must reach 100 by exact spin! Stayed on square ${startPos}.`);
       }
@@ -6710,7 +6710,7 @@ stdInit('monopoly', {
 const PAYDAY_PAWNS = ['🔴', '🔵', '🟢', '🟡'];
 const PAYDAY_PAWN_COLORS = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b'];
 
-// 31 Authentic Calendar Board Spaces as shown on official Milton Bradley / Parker Brothers game board:
+// 31 Authentic Calendar Board Spaces as shown on official game board:
 const PAYDAY_CALENDAR = [
   { day: 0, dow: 'SUN', t: 'start', title: 'START HERE', icon: '👉', sub: 'Take off!' },
   { day: 1, dow: 'MON', t: 'mail', count: 1, title: 'Mail', icon: '📬', sub: '1 Letter' },
@@ -7671,7 +7671,7 @@ function renderLifeCardBackHtml(deckType: 'career' | 'college' | 'house' | 'life
   let h = '<div class="life-flip-card-face life-card-back" style="background:' + borderGrad + ';border-color:' + accent + '">';
   h += '<div style="font-size:26px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.8))">' + badge + '</div>';
   h += '<div class="life-card-back-title">' + deckName + '</div>';
-  h += '<div style="font-size:8px;color:#fef08a;font-weight:800;letter-spacing:1px;margin-top:2px">MILTON BRADLEY</div>';
+  h += '<div style="font-size:8px;color:#fef08a;font-weight:800;letter-spacing:1px;margin-top:2px">THE GAME OF CHOICES</div>';
   h += '<div class="life-card-back-hint">' + (hint || '👆 TAP TO FLIP') + '</div>';
   h += '</div>';
   return h;
@@ -7732,7 +7732,7 @@ function renderLifeDeckPilesHtml(S: any): string {
 stdInit('life', {
   name: 'The Game of Choices',
   icon: '🚗',
-  desc: 'Official Milton Bradley Board Edition',
+  desc: 'Official Board Edition',
   p: [2, 4],
   payout: PAYOUTS.life,
   rules: 'Official The Game of Choices: Choose College or Career path, spin the 1–10 Rainbow Wheel, advance your station wagon loaded with blue and pink pegs for your family, buy homes, stop for milestones (Graduation, Marriage, Houses), collect Pay Days, and retire at Millionaire Estates with the largest total fortune!',
@@ -7781,9 +7781,9 @@ stdInit('life', {
     let h = '<div class="life-wrap">';
     h += turnBanner(C);
 
-    // Official Milton Bradley 3D Header Banner
+    // Official 3D Header Banner
     h += '<div class="life-header-banner">';
-    h += '<div class="life-mb-badge"><span>🎲</span> MILTON BRADLEY OFFICIAL 3D EDITION</div>';
+    h += '<div class="life-mb-badge"><span>🎲</span> OFFICIAL 3D EDITION</div>';
     h += '<div class="life-logo-title">THE GAME OF CHOICES</div>';
     h += '<div class="life-logo-sub">Classic Serpentine Highway · Official Station Wagons &amp; Pegs</div>';
     h += '</div>';
@@ -8745,7 +8745,7 @@ stdInit('life', {
   }
 });
 
-/* ================= 1995 MILTON BRADLEY OFFICIAL JUMANJI BOARD GAME ================= */
+/* ================= 1995 OFFICIAL JUMANJI BOARD GAME ================= */
 
 // SVG vector renderer for the 4 authentic movie animal pawns and Rhino blocker
 function renderMoviePawnSvg(pawnIdx: number | 'rhino_blocker', size = 26): string {
@@ -8795,7 +8795,7 @@ function renderMoviePawnSvg(pawnIdx: number | 'rhino_blocker', size = 26): strin
   </svg>`;
 }
 
-// 30 Authentic 1995 Milton Bradley Danger Cards
+// 30 Authentic 1995 Danger Cards
 const MB_1995_DANGER_CARDS = [
   { id: 'bats', danger: 'Giant Bats', icon: '🦇', rhyme: "At night they fly; you better run. These winged things are not much fun.", symbol: 'raft', symName: 'Raft 🛶', symIcon: '🛶', spaces: 3 },
   { id: 'elephants', danger: 'Stampeding Elephants', icon: '🐘', rhyme: "Huge beasts on the move, driving through like a truck. You can't outrun them, watch out for their tusks.", symbol: 'rope', symName: 'Rope 🪢', symIcon: '🪢', spaces: 4 },
@@ -8841,7 +8841,7 @@ const MB_RESCUE_DICE_SYMBOLS = [
 
 const MB_TRACK_LEN = 28;
 
-// Space definitions for the authentic 28-square Milton Bradley board
+// Space definitions for the authentic 28-square board
 function getMbSpaceMeta(s: number): { type: 'start' | 'blank' | 'wait58' | 'rhino' | 'jungle' | 'goal'; label: string; icon: string } {
   if (s <= 1) return { type: 'start', label: 'START', icon: '★' };
   if (s >= MB_TRACK_LEN) return { type: 'goal', label: 'JUMANJI', icon: '🌟' };
@@ -8854,10 +8854,10 @@ function getMbSpaceMeta(s: number): { type: 'start' | 'blank' | 'wait58' | 'rhin
 stdInit('jumanji', {
   name: 'Jumanji',
   icon: '🦁',
-  desc: '1995 Milton Bradley Official Edition',
+  desc: 'Official Edition',
   p: [2, 4],
   payout: PAYOUTS.jumanji,
-  rules: 'Official 1995 Milton Bradley Jumanji: Advance your carved animal pawn (Monkey, Rhino, Crocodile, Elephant) along your 28-square ivory stepping stone path. On Blank Spaces, draw a Danger Card into the center red decoder lens! Fellow players roll Rescue Dice before the 8-second sand timer expires (Hourglass ⏳ is Wild!). If saved, fellow players advance by the card\'s number. If anyone fails, the card goes to the Doomsday Grid and the active player moves backward. On "Wait for 5 or 8" spaces, you are trapped until someone rolls a 5 or an 8! If all 10 Doomsday Grid slots fill up, the jungle wins and everyone loses. The first player to reach the center (Space 28) by exact count calls out "JUMANJI!" and wins!',
+  rules: 'Official Jumanji: Advance your carved animal pawn (Monkey, Rhino, Crocodile, Elephant) along your 28-square ivory stepping stone path. On Blank Spaces, draw a Danger Card into the center red decoder lens! Fellow players roll Rescue Dice before the 8-second sand timer expires (Hourglass ⏳ is Wild!). If saved, fellow players advance by the card\'s number. If anyone fails, the card goes to the Doomsday Grid and the active player moves backward. On "Wait for 5 or 8" spaces, you are trapped until someone rolls a 5 or an 8! If all 10 Doomsday Grid slots fill up, the jungle wins and everyone loses. The first player to reach the center (Space 28) by exact count calls out "JUMANJI!" and wins!',
 
   newState(C: any) {
     const deck = shuffleLifeDeck([...MB_1995_DANGER_CARDS]);
@@ -9218,7 +9218,7 @@ stdInit('jumanji', {
 
     // If trapped in Wait for 5 or 8
     if (isTrapped) {
-      // In the Milton Bradley rules, players must roll a 5 or an 8 to free the trapped player
+      // In the rules, players must roll a 5 or an 8 to free the trapped player
       // With a single 6-sided die, rolling a 5 frees them. Or if 2 dice are rolled, a sum of 5 or 8.
       const freed = roll === 5;
       if (freed) {

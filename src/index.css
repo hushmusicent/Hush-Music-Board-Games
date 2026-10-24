@@ -490,7 +490,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   background: rgba(0, 0, 0, 0.3);
 }
 
-/* Official Milton Bradley Board Outer Frame */
+/* Official Board Outer Frame */
 .chutes-board-frame {
   position: relative;
   width: 100%;
@@ -628,7 +628,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   z-index: 6;
 }
 
-/* Standee Pawn Styling (Milton Bradley Die-Cut Standee on Plastic Base) */
+/* Standee Pawn Styling (Die-Cut Standee on Plastic Base) */
 .chutes-pawn {
   display: flex;
   flex-direction: column;
@@ -717,7 +717,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   gap: 6px;
 }
 
-/* Official Milton Bradley 1-6 Arrow Spinner */
+/* Official 1-6 Arrow Spinner */
 .chutes-spinner-card {
   width: 100%;
   max-width: 480px;
@@ -3435,7 +3435,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   box-shadow: 0 0 3px #db2777;
 }
 
-/* ================= 1995 MILTON BRADLEY OFFICIAL JUMANJI BOARD GAME STYLES ================= */
+/* ================= 1995 OFFICIAL JUMANJI BOARD GAME STYLES ================= */
 .mb-jumanji-wrap {
   display: flex;
   flex-direction: column;
@@ -3738,7 +3738,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
 }
 
-/* Authentic Milton Bradley Danger Card with Red Noise Cipher Decoder */
+/* Authentic Danger Card with Red Noise Cipher Decoder */
 .mb-jumanji-card-modal {
   background: #fdfbf7;
   color: #1c1917;
