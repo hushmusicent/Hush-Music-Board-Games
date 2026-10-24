@@ -830,7 +830,7 @@ const UI = {
             </div>
             <button class="btn small secondary" id="changeChampBtn" style="font-size:11px; padding:3px 8px; border-color:#d97706; color:#fde68a; white-space:nowrap; flex-shrink:0;">All Bios ➔</button>
           </div>
-          <div class="muted" style="font-size:11px; margin-bottom:6px;">Select opponent level 1 to 10 (World Scrabble Champions):</div>
+          <div class="muted" style="font-size:11px; margin-bottom:6px;">Select opponent level 1 to 10 (World Champions):</div>
           
           <div class="scrabble-bot-level-grid">
             ${SCRABBLE_CHAMPIONS.map(c => `
@@ -1945,12 +1945,12 @@ const GAME_INSTRUCTIONS: Record<string, { title: string; icon: string; goal: str
     ]
   },
   scrabble: {
-    title: 'Scrabble',
+    title: 'WordPlay',
     icon: '🔤',
-    goal: 'Official 15×15 Scrabble. Spell high-scoring words on the official board using wooden letter tiles and premium multiplier squares.',
+    goal: 'Official 15×15 WordPlay. Spell high-scoring words on the official board using wooden letter tiles and premium multiplier squares.',
     steps: [
       'Official 15×15 Board: Play on the authentic 225-square board with coordinate labels A–O and 1–15.',
-      'Newest Webster Dictionary: Word allowances validated against the Official Scrabble Players Dictionary (8th Edition, 83,000+ words including newest additions like BOBA, KAYFABE, SPOX, YAS, ZOOMIES, VAX, GUAC, WELP, BAE, RIZZ, and all 107 official 2-letter words).',
+      'Newest Webster Dictionary: Word allowances validated against the Official WordPlay Players Dictionary (8th Edition, 83,000+ words including newest additions like BOBA, KAYFABE, SPOX, YAS, ZOOMIES, VAX, GUAC, WELP, BAE, RIZZ, and all 107 official 2-letter words).',
       '1. Tap any empty square on the board to set your starting anchor (shown with a pulsing gold ring).',
       '2. Tap "↔ Across" or "↕ Down" to choose spelling direction.',
       '3. Tap wooden tiles on your rack to place them into the squares. Tap any placed tile to recall it back to your rack.',
@@ -1958,7 +1958,7 @@ const GAME_INSTRUCTIONS: Record<string, { title: string; icon: string; goal: str
       '★ Center Star (H8 / 7,7): The first word of the game must cover the center star for Double Word score.',
       'Connecting Words: All subsequent plays must connect with tiles already on the board.',
       'Points Match the Squares: Double Letter (DL = 2× letter), Triple Letter (TL = 3× letter), Double Word (DW = 2× word), Triple Word (TW = 3× word). Using all 7 tiles in one turn awards the +50 Bingo bonus!',
-      'Champion Levels 1–10: Play against the 10 greatest World Scrabble Champions (Level 1 Peter Morris through Level 10 GOAT Nigel Richards). Each level elevates tactical vocabulary, board positioning, and bingo hunting!',
+      'Champion Levels 1–10: Play against the 10 greatest World Champions (Level 1 Peter Morris through Level 10 GOAT Nigel Richards). Each level elevates tactical vocabulary, board positioning, and bingo hunting!',
       'Rack Tools: Use "🔀 Shuffle" to discover new anagrams, "↺ Recall All" to reset placed tiles, or "🔄 Exchange" / "⏭ Pass".'
     ],
     tips: [
@@ -10372,7 +10372,7 @@ stdInit('clue', {
   }
 });
 
-/* ================= SCRABBLE (Official 15x15 Board & Wooden Tiles) ================= */
+/* ================= WORDPLAY (Official 15x15 Board & Wooden Tiles) ================= */
 
 const SCR_2LETTER_WORDS = [
   'AA', 'AB', 'AD', 'AE', 'AG', 'AH', 'AI', 'AL', 'AM', 'AN', 'AR', 'AS', 'AT', 'AW', 'AX', 'AY',
@@ -10555,12 +10555,12 @@ const SCR_COMMON_WORDS = [
   'WINTER', 'WISDOM', 'WONDER', 'WORKER', 'WORTHY', 'WRITER', 'YELLOW'
 ];
 
-// SCR_DICT is powered by the newest Merriam-Webster Official Scrabble Players Dictionary (83,760+ allowable words)
+// SCR_DICT is powered by the newest Merriam-Webster Official WordPlay Players Dictionary (83,760+ allowable words)
 const SCR_DICT: Set<string> = (SCRABBLE_WEBSTER_SET && SCRABBLE_WEBSTER_SET.size > 0)
   ? SCRABBLE_WEBSTER_SET
   : new Set([...SCR_2LETTER_WORDS, ...SCR_COMMON_WORDS]);
 
-// Official Scrabble Premium Squares on 15x15 board
+// Official WordPlay Premium Squares on 15x15 board
 const SCRABBLE_PREM_15: Record<string, string> = {
   // Triple Word (TW) - 8 squares (Crimson Red)
   '0,0': 'TW', '7,0': 'TW', '14,0': 'TW',
@@ -10592,7 +10592,7 @@ const SCRABBLE_PREM_15: Record<string, string> = {
   '3,14': 'DL', '11,14': 'DL'
 };
 
-/* ================= TOP 10 SCRABBLE CHAMPIONS (BOT LEVELS 1 - 10) ================= */
+/* ================= TOP 10 WORDPLAY CHAMPIONS (BOT LEVELS 1 - 10) ================= */
 
 interface ScrabbleChampion {
   level: number;
@@ -10617,7 +10617,7 @@ const SCRABBLE_CHAMPIONS: ScrabbleChampion[] = [
     country: 'USA / Canada',
     flag: '🇺🇸',
     rating: 1550,
-    desc: 'Winner of the historic inaugural 1991 World Scrabble Championship in London.',
+    desc: 'Winner of the historic inaugural 1991 World Championship in London.',
     style: 'Beginner-friendly · Plays common 3–5 letter words'
   },
   {
@@ -10629,7 +10629,7 @@ const SCRABBLE_CHAMPIONS: ScrabbleChampion[] = [
     country: 'United Kingdom',
     flag: '🇬🇧',
     rating: 1650,
-    desc: 'First British World Scrabble Champion and 4-time National Champion.',
+    desc: 'First British World Champion and 4-time National Champion.',
     style: 'Steady tactical play · Solid fundamentals'
   },
   {
@@ -10653,7 +10653,7 @@ const SCRABBLE_CHAMPIONS: ScrabbleChampion[] = [
     country: 'Nigeria',
     flag: '🇳🇬',
     rating: 1850,
-    desc: 'First African World Scrabble Champion and 2-time African Scrabble Champion.',
+    desc: 'First African World Champion and 2-time African Champion.',
     style: 'Defensive blocking · Hooks & 4–6 letter combos'
   },
   {
@@ -10677,7 +10677,7 @@ const SCRABBLE_CHAMPIONS: ScrabbleChampion[] = [
     country: 'Thailand',
     flag: '🇹🇭',
     rating: 2020,
-    desc: 'Thai Scrabble prodigy who won the King\'s Cup at age 16 and reached 2 World Finals.',
+    desc: 'Thai word prodigy who won the King\'s Cup at age 16 and reached 2 World Finals.',
     style: 'Rapid anagramming & Triple Letter bonuses'
   },
   {
@@ -10861,7 +10861,7 @@ function showScrabbleChampionSelector(onSelect: (champ: ScrabbleChampion) => voi
     <div style="max-height:80vh; overflow-y:auto; padding:4px;">
       <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid var(--line); padding-bottom:8px;">
         <div>
-          <h2 style="margin:0; font-size:18px;">🏆 Scrabble Champions (Levels 1 – 10)</h2>
+          <h2 style="margin:0; font-size:18px;">🏆 WordPlay Champions (Levels 1 – 10)</h2>
           <div class="muted" style="font-size:12px;">Choose your opponent from history's 10 greatest World Champions:</div>
         </div>
         <button class="iconbtn" id="closeChampModalBtn" style="padding:4px 8px; font-size:16px;" title="Close">✕</button>
@@ -10907,12 +10907,12 @@ function showScrabbleChampionSelector(onSelect: (champ: ScrabbleChampion) => voi
 }
 
 stdInit('scrabble', {
-  name: 'Scrabble',
+  name: 'WordPlay',
   icon: '🔤',
   desc: 'Classic Word Showdown',
   p: [2, 2],
   payout: PAYOUTS.scrabble,
-  rules: 'Official 15×15 Scrabble. Tap any square to place your anchor cursor, select direction (↔ Across or ↕ Down), then tap your wooden rack tiles to lay them onto the board. Tiles must connect with existing board letters (first word must cover the ★ center square). Multipliers apply to newly placed tiles: DL (2× letter), TL (3× letter), DW (2× word), TW (3× word). 7 tiles at once awards the +50 Bingo bonus!',
+  rules: 'Official 15×15 WordPlay. Tap any square to place your anchor cursor, select direction (↔ Across or ↕ Down), then tap your wooden rack tiles to lay them onto the board. Tiles must connect with existing board letters (first word must cover the ★ center square). Multipliers apply to newly placed tiles: DL (2× letter), TL (3× letter), DW (2× word), TW (3× word). 7 tiles at once awards the +50 Bingo bonus!',
   N: 15,
   DIST: {
     A: [9, 1], B: [2, 3], C: [2, 3], D: [4, 2], E: [12, 1], F: [2, 4],
@@ -11120,14 +11120,14 @@ stdInit('scrabble', {
       }
     }
 
-    // Validate all formed words against the Merriam-Webster Official Scrabble Dictionary
+    // Validate all formed words against the Merriam-Webster Official WordPlay Dictionary
     for (const item of wordsFormed) {
       if (!SCR_DICT.has(item.w)) {
-        return { ok: false, reason: '"' + item.w + '" is not recognized in the Webster Scrabble dictionary' };
+        return { ok: false, reason: '"' + item.w + '" is not recognized in the Webster WordPlay dictionary' };
       }
     }
 
-    // Calculate Scrabble point scoring matching the squares
+    // Calculate WordPlay point scoring matching the squares
     const lv = (ch: string) => g.DIST[ch] ? g.DIST[ch][1] : 1;
     let totalScore = 0;
     const wordBreakdowns: string[] = [];
@@ -11177,7 +11177,7 @@ stdInit('scrabble', {
     if (!C.priv) this.dealPriv(C);
 
     if (C.isNet && !C.priv.rack.length) {
-      R.innerHTML = turnBanner(C) + '<div class="card center"><h2>🔤 Scrabble</h2><div class="muted">Waiting for tiles from host…</div></div>';
+      R.innerHTML = turnBanner(C) + '<div class="card center"><h2>🔤 WordPlay</h2><div class="muted">Waiting for tiles from host…</div></div>';
       return;
     }
 
@@ -11193,7 +11193,7 @@ stdInit('scrabble', {
 
     let h = turnBanner(C) + '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">';
     h += '  <div>';
-    h += '    <h2 style="margin:0;display:inline-flex;align-items:center;gap:6px;">🔤 Official Scrabble</h2>';
+    h += '    <h2 style="margin:0;display:inline-flex;align-items:center;gap:6px;">🔤 Official WordPlay</h2>';
     h += '    <span style="display:inline-block; margin-left:8px; font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(34,197,94,0.15); border:1px solid #22c55e; color:#86efac; font-weight:600;" title="' + WEBSTER_EDITION_INFO.notes + '">';
     h += '      📖 ' + WEBSTER_EDITION_INFO.version + ' (' + WEBSTER_EDITION_INFO.wordCount.toLocaleString() + ' Official Words)';
     h += '    </span>';
@@ -11226,7 +11226,7 @@ stdInit('scrabble', {
     // Coordinates letters A-O and numbers 1-15
     const COORD_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O'];
 
-    // Official Scrabble Board Layout
+    // Official WordPlay Board Layout
     h += '<div class="scrabble-outer-wrap">';
     h += '  <div class="scrabble-board-frame">';
 
@@ -11254,7 +11254,7 @@ stdInit('scrabble', {
         const isAnchor = P.ax === x && P.ay === y;
         const isCenter = x === 7 && y === 7;
 
-        // Determine square styling class matching official Scrabble board
+        // Determine square styling class matching official WordPlay board
         let sqClass = 'scrabble-square';
         if (isCenter) sqClass += ' sq-center';
         else if (prem === 'TW') sqClass += ' sq-tw';
@@ -11391,18 +11391,18 @@ stdInit('scrabble', {
 
     R.innerHTML = h;
 
-    // Word Checker / Webster Scrabble Dictionary lookup tool
+    // Word Checker / Webster WordPlay Dictionary lookup tool
     const lookupBtn = $('#websterLookupBtn');
     if (lookupBtn) {
       lookupBtn.onclick = () => {
-        const wordToCheck = prompt('Enter a word to check against the Official Merriam-Webster Scrabble Dictionary:') || '';
+        const wordToCheck = prompt('Enter a word to check against the Official Merriam-Webster WordPlay Dictionary:') || '';
         const trimmed = wordToCheck.trim().toUpperCase();
         if (!trimmed) return;
         const valid = isWebsterScrabbleWord(trimmed);
         if (valid) {
-          toast(`✅ "${trimmed}" is a VALID word in the Official Webster Scrabble Dictionary!`);
+          toast(`✅ "${trimmed}" is a VALID word in the Official Webster WordPlay Dictionary!`);
         } else {
-          toast(`❌ "${trimmed}" is NOT in the Official Webster Scrabble Dictionary.`);
+          toast(`❌ "${trimmed}" is NOT in the Official Webster WordPlay Dictionary.`);
         }
       };
     }

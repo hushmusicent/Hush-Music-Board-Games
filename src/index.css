@@ -4230,7 +4230,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
 }
 
 /* ==========================================================================
-   OFFICIAL 15x15 SCRABBLE BOARD & WOODEN TILES STYLES
+   OFFICIAL 15x15 WORDPLAY BOARD & WOODEN TILES STYLES
    ========================================================================== */
 
 .scrabble-outer-wrap {
@@ -4324,7 +4324,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   z-index: 2;
 }
 
-/* Authentic Premium Square Colors matching official Scrabble Board */
+/* Authentic Premium Square Colors matching official WordPlay Board */
 .scrabble-square.sq-tw {
   background: #b91c1c; /* Crimson Red */
   color: #ffffff;
@@ -4397,7 +4397,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   50% { outline: 2.5px solid #fbbf24; outline-offset: 1px; }
 }
 
-/* Wooden Scrabble Letter Tiles that fit the squares */
+/* Wooden WordPlay Letter Tiles that fit the squares */
 .scrabble-wood-tile {
   position: absolute;
   top: 1px;
@@ -4556,7 +4556,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
 .scrabble-bonus-badge.badge-bingo { background: #eab308; color: #713f12; }
 
 /* ==========================================================================
-   SCRABBLE CHAMPIONS BOT LEVELS 1 - 10 STYLES
+   WORDPLAY CHAMPIONS BOT LEVELS 1 - 10 STYLES
    ========================================================================== */
 
 .scrabble-champ-list {
@@ -4677,7 +4677,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
   color: #fde68a;
 }
 
-/* Scrabble Bot Level 1 - 10 Grid and In-game selector */
+/* WordPlay Bot Level 1 - 10 Grid and In-game selector */
 .scrabble-bot-level-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
