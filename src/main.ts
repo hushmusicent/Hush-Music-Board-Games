@@ -396,6 +396,7 @@ const Net = {
   },
   async create(game: string, seats: number) {
     if (!this.needNet()) return null;
+    if (Auth.user && Auth.user.uid === 'local') { toast('Online rooms need a real account — guest play is demo only. Sign up or log in first.'); return null; }
     await this.leave(true);
     const code = String(ri(1000, 9999));
     const room = {
@@ -418,6 +419,7 @@ const Net = {
   },
   async join(code: string) {
     if (!this.needNet()) return null;
+    if (Auth.user && Auth.user.uid === 'local') { toast('Online rooms need a real account — guest play is demo only. Sign up or log in first.'); return null; }
     code = String(code).trim();
     const s = await Backend.db.ref('bgh_rooms/' + code).get();
     if (!s.exists()) {
