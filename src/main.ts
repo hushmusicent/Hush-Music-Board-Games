@@ -430,6 +430,12 @@ const Net = {
       return null;
     }
     await this.leave(true);
+    if (room.seats.includes(Auth.user.uid)) {
+      // Same account on two phones: the account already holds a seat, so
+      // joining again adds nobody and the room sits at 1/2 forever. Say so
+      // instead of silently waiting.
+      toast('This account is already in that room — the second phone needs a different account.');
+    }
     if (!room.seats.includes(Auth.user.uid)) {
       if (room.seats.length >= room.seatsNeeded) {
         toast('Room is full');
