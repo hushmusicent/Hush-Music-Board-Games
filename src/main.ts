@@ -556,6 +556,7 @@ const Voice = {
   _mySpeaking: false,
   _panelCollapsed: false,
   voiceError: '',
+  sigError: '',
   _off: [] as Array<() => void>,
   configured() {
     // Voice needs exactly what online PvP needs: Firebase. No keys to paste.
@@ -577,6 +578,7 @@ const Voice = {
     if (!Auth.user || !Auth.user.uid) { toast('Not signed in.'); return false; }
     this.connecting = true;
     this.voiceError = '';
+    this.sigError = '';
     this.code = String(Net.room.code);
     this.myUid = String(Auth.user.uid);
     this.session = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
@@ -698,7 +700,10 @@ const Voice = {
     try { this.stream.getTracks().forEach((t: any) => pc.addTrack(t, this.stream)); } catch (e) {}
     pc.onicecandidate = (ev: any) => {
       if (ev.candidate) {
-        try { this._sigRef(pair).child('cands').push({ from: this.myUid, session: this.session, cand: ev.candidate.toJSON() }); } catch (e) {}
+        try {
+          const r: any = this._sigRef(pair).child('cands').push({ from: this.myUid, session: this.session, cand: ev.candidate.toJSON() });
+          if (r && r.catch) r.catch((e: any) => { this.sigError = 'signal write failed: ' + (e && e.message ? e.message : e); this._renderPanel(); });
+        } catch (e) {}
       }
     };
     // Remote audio goes through the shared remote gain (speaker path) so
@@ -728,8 +733,13 @@ const Voice = {
           await pc.setRemoteDescription(new RTCSessionDescription(v.offer.sdp));
           const ans = await pc.createAnswer();
           await pc.setLocalDescription(ans);
-          await sig.child('answer').set({ from: this.myUid, session: this.session, sdp: pc.localDescription });
-          peer.offerAnswered = true;
+          try {
+            await sig.child('answer').set({ from: this.myUid, session: this.session, sdp: pc.localDescription });
+            peer.offerAnswered = true;
+          } catch (e: any) {
+            this.sigError = 'answer write failed: ' + (e && e.message ? e.message : e);
+            this._renderPanel();
+          }
           this._flushPending(peer);
         } else if (v.answer && v.answer.from !== this.myUid && v.answer.session === peer.session && pc.signalingState === 'have-local-offer') {
           peer._sigBusy = true;
@@ -760,7 +770,7 @@ const Voice = {
           const off = await pc.createOffer();
           await pc.setLocalDescription(off);
           await sig.child('offer').set({ from: this.myUid, session: this.session, sdp: pc.localDescription });
-        } catch (e) { console.warn(e); }
+        } catch (e: any) { this.sigError = 'offer write failed: ' + (e && e.message ? e.message : e); this._renderPanel(); console.warn(e); }
       })();
     }
     this._renderPanel();
@@ -893,6 +903,7 @@ const Voice = {
       + '<button class="vp-btn leave" data-vp-action="leave" title="Disconnect Voice Talk">📴</button>'
       + '<button class="vp-btn collapse" data-vp-action="collapse" title="' + (this._panelCollapsed ? 'Expand voice list' : 'Collapse voice list') + '">' + (this._panelCollapsed ? '⌃' : '⌄') + '</button>'
       + '</div></div>' + this._errHtml()
+      + (this.sigError ? '<div class="vp-err"><span>⚠️</span><span>' + esc(this.sigError) + '</span></div>' : '')
       + (this._panelCollapsed ? '' : '<div class="vp-parts">' + (rows.join('') || '<div class="muted">Waiting for others to join voice…</div>') + '</div>')
       + '</div>';
   },
@@ -935,7 +946,7 @@ const Voice = {
     try { if (this._localSrc) this._localSrc.disconnect(); } catch (e) {}
     try { if (this.ctx && this.ctx.close) this.ctx.close(); } catch (e) {}
     this.ctx = null; this.remoteGain = null; this.localAnalyser = null; this._localSrc = null;
-    this._speakHold = 0; this._mySpeaking = false;
+    this._speakHold = 0; this._mySpeaking = false; this.sigError = '';
     // Best effort: remove my presence + the signal docs I took part in, so
     // nothing stale survives into the next session.
     if (Backend.db && this.code && this.myUid) {
