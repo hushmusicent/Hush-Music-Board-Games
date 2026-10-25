@@ -1,6 +1,6 @@
 {
   "name": "Board Game Hub",
   "description": "15 classic board games. Play vs Computer, Pass & Play, or Online PvP with room codes.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
