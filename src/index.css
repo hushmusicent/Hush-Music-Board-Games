@@ -5436,3 +5436,4 @@ header .logo{flex:1;}
   animation: vp-spin 1s linear infinite;
 }
 @keyframes vp-spin { to { transform: rotate(360deg); } }
+.vp-media { font-size: 10px; color: #94a3b8; margin-top: 2px; }

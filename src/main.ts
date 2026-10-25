@@ -695,33 +695,39 @@ const Voice = {
     // Remote audio goes through the shared remote gain (speaker path) so
     // the speaker/deafen button can silence it, like the hand game's
     // audio.muted. No remote analyser: remote Speaking comes from presence.
+    // The mic-to-speaker chain: remote track -> MediaStreamSource ->
+    // shared remote gain -> speakers. Wired only through _wireRemoteAudio,
+    // so a track that arrives before the AudioContext exists still gets
+    // hooked up, a suspended context is resumed, and a re-fired track
+    // never double-wires.
     pc.ontrack = (ev: any) => {
       try {
         const rs = (ev.streams && ev.streams[0]) || (() => { const st = new MediaStream(); st.addTrack(ev.track); return st; })();
         peer.remoteStream = rs;
-        if (this.ctx && this.remoteGain) {
-          const rsrc = this.ctx.createMediaStreamSource(rs);
-          rsrc.connect(this.remoteGain);
-          peer.audioNodes = { src: rsrc };
-        }
+        this._wireRemoteAudio(peer);
         this._renderPanel();
       } catch (e) { console.warn(e); }
     };
+    pc.oniceconnectionstatechange = () => { try { this._renderPanel(); } catch (e) {} };
     const sig = this._sigRef(pair);
     const valH = async (snap: any) => {
       const v = snap.val() || {};
+      if (peer._sigBusy) return; // async handler: never overlap two runs
       try {
-        if (v.offer && v.offer.from !== this.myUid && v.offer.session === peer.session && pc.signalingState === 'stable') {
+        if (v.offer && v.offer.from !== this.myUid && v.offer.session === peer.session && pc.signalingState === 'stable' && !peer.offerAnswered) {
+          peer._sigBusy = true;
           await pc.setRemoteDescription(new RTCSessionDescription(v.offer.sdp));
           const ans = await pc.createAnswer();
           await pc.setLocalDescription(ans);
           await sig.child('answer').set({ from: this.myUid, session: this.session, sdp: pc.localDescription });
+          peer.offerAnswered = true;
           this._flushPending(peer);
         } else if (v.answer && v.answer.from !== this.myUid && v.answer.session === peer.session && pc.signalingState === 'have-local-offer') {
+          peer._sigBusy = true;
           await pc.setRemoteDescription(new RTCSessionDescription(v.answer.sdp));
           this._flushPending(peer);
         }
-      } catch (e) { console.warn(e); }
+      } catch (e) { console.warn(e); } finally { peer._sigBusy = false; }
     };
     sig.on('value', valH);
     const candH = (snap: any) => {
@@ -749,6 +755,28 @@ const Voice = {
       })();
     }
     this._renderPanel();
+  },
+  _wireRemoteAudio(peer: any) {
+    if (!peer || !peer.remoteStream) return;
+    if (!this.ctx || !this.remoteGain) return; // retried via ontrack once the context exists
+    try { if (peer.audioNodes) peer.audioNodes.src.disconnect(); } catch (e) {}
+    try {
+      const rsrc = this.ctx.createMediaStreamSource(peer.remoteStream);
+      rsrc.connect(this.remoteGain);
+      peer.audioNodes = { src: rsrc };
+      if (this.ctx.state === 'suspended' && this.ctx.resume) { const r = this.ctx.resume(); if (r && r.catch) r.catch(() => {}); }
+    } catch (e) { console.warn(e); }
+  },
+  // Truth signal for "is the mic hooked to the speakers": presence and
+  // Speaking bars say nothing about the audio path, so each remote row
+  // reports the actual media state — peer, track, wiring, ICE.
+  _mediaState(uid: string) {
+    const peer = this.peers[uid];
+    if (!peer) return 'no peer yet';
+    const ice = (peer.pc && peer.pc.iceConnectionState) || '?';
+    if (!peer.remoteStream) return 'waiting for audio · ice: ' + ice;
+    if (!peer.audioNodes) return 'track arrived, NOT wired to speakers';
+    return 'audio wired to speakers · ice: ' + ice;
   },
   _flushPending(peer: any) {
     const list = peer.pending || [];
@@ -795,6 +823,7 @@ const Voice = {
     p.style.cssText = 'position:fixed;left:10px;right:10px;bottom:' + ((nav ? nav.offsetHeight : 60) + 8) + 'px;z-index:90;';
     document.body.appendChild(p);
     p.addEventListener('click', (ev: any) => {
+      try { if (this.ctx && this.ctx.state === 'suspended' && this.ctx.resume) this.ctx.resume(); } catch (e) {}
       const t = (ev.target as HTMLElement).closest ? (ev.target as HTMLElement).closest('[data-vp-action]') as HTMLElement : null;
       if (!t) return;
       try { Sound.click(); } catch (e) {}
@@ -818,7 +847,7 @@ const Voice = {
       ? '<div class="vp-err"><span>⚠️</span><span>' + esc(this.voiceError) + '</span></div>'
       : '';
   },
-  _partRow(uid: string, name: string, isMe: boolean, muted: boolean, speaking: boolean) {
+  _partRow(uid: string, name: string, isMe: boolean, muted: boolean, speaking: boolean, media?: string) {
     const status = speaking
       ? '<span class="vp-bars"><i></i><i></i><i></i></span><span>Speaking</span>'
       : (muted ? 'Muted' : 'Connected');
@@ -826,7 +855,8 @@ const Voice = {
     return '<div class="vp-part' + (speaking ? ' speaking' : '') + '">'
       + '<div class="vp-av"><div class="vp-av-circle">🎧</div>' + (muted ? '<span class="vp-muted-badge">🚫</span>' : '') + '</div>'
       + '<div style="min-width:0"><div style="display:flex;align-items:center;gap:4px"><span class="vp-name">' + esc(name) + '</span>' + (isMe ? '<span class="vp-you">(You)</span>' : '') + '</div>'
-      + '<div class="' + cls + '">' + status + '</div></div></div>';
+      + '<div class="' + cls + '">' + status + '</div>'
+      + (media ? '<div class="vp-media">' + esc(media) + '</div>' : '') + '</div></div>';
   },
   _renderPanel() {
     const p = document.getElementById('voicePanel');
@@ -842,11 +872,11 @@ const Voice = {
     }
     const rows: string[] = [];
     const me = this.presenceInfo[this.myUid];
-    if (me) rows.push(this._partRow(this.myUid, me.name, true, !!me.muted, this._mySpeaking));
+    if (me) rows.push(this._partRow(this.myUid, me.name, true, !!me.muted, this._mySpeaking, this.stream ? 'mic live' : ''));
     Object.keys(this.presenceInfo).forEach(uid => {
       if (uid === this.myUid) return;
       const info = this.presenceInfo[uid];
-      rows.push(this._partRow(uid, info.name || 'Player', false, !!info.muted, !!info.isSpeaking));
+      rows.push(this._partRow(uid, info.name || 'Player', false, !!info.muted, !!info.isSpeaking, this._mediaState(uid)));
     });
     p.innerHTML = '<div class="vp-card"><div class="vp-head"><div class="vp-head-left"><span class="vp-dot"><i class="ping"></i><i></i></span><span class="vp-title">📻 Voice Connected</span><span class="vp-pill">' + n + ' in call</span></div><div class="vp-actions">'
       + '<button class="vp-btn ' + (this.micMuted ? 'mic-off' : 'mic-on') + '" data-vp-action="mic" title="' + (this.micMuted ? 'Unmute Microphone' : 'Mute Microphone') + '">' + (this.micMuted ? '🚫' : '🎤') + '<span class="vp-btn-label">' + (this.micMuted ? 'Muted' : 'Mic On') + '</span></button>'
