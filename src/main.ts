@@ -521,7 +521,7 @@ const Net = {
 /* ================= VOICE (pure WebRTC over Firebase RTDB — the hand-game wiring) =================
    Same engine as the hand game's VoiceChatWidget + voiceService, adapted
    from Firestore to this hub's RTDB: audio-only mesh, signaling under
-   bgh_rooms/<code>/voice_presence + voice_signals, Google STUN, session
+   bgh_rooms/<code>/voice_presence + voice_signals, Google STUN + TURN fallback, session
    ids, overwrite-not-merge, signalingState guards, lower uid offers.
    The panel matches the hand game's widget: a Live Voice Conversation
    card with Join Voice Talk before joining, and the Voice Connected card
@@ -683,7 +683,16 @@ const Voice = {
   },
   _createPeer(uid: string, session: string) {
     const pair = this._pairId(this.myUid, uid);
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    // ICE: Google STUN first (direct phone-to-phone whenever possible),
+    // plus a free public TURN relay as fallback. ICE always tries direct
+    // first; the relay is used ONLY if the two phones cannot reach each
+    // other directly (e.g. symmetric NATs) — which otherwise means
+    // presence works but no voice in either direction.
+    const pc = new RTCPeerConnection({ iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    ] });
     const peer: any = { pc, session, pending: [] as any[] };
     this.peers[uid] = peer;
     try { this.stream.getTracks().forEach((t: any) => pc.addTrack(t, this.stream)); } catch (e) {}
