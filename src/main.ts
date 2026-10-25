@@ -182,39 +182,11 @@ if (soundBtn) {
   };
 }
 
-const micBtn = $('#micBtn');
-if (micBtn) {
-  micBtn.onclick = () => Voice.toggleMic();
-}
-
-// In-game voice join button (header) — created lazily inside
-// updateVoiceHdrBtn() because the <header> element doesn't exist yet when
-// this script first runs. Visible only during an online game when voice
-// isn't already active. The #micBtn handles mute once voice is on.
-function ensureVoiceHdrBtn(): HTMLElement | null {
-  let b = document.getElementById('voiceHdrBtn') as HTMLElement;
-  if (b) return b;
-  const hdr = document.querySelector('header');
-  if (!hdr) return null;
-  b = document.createElement('button');
-  b.className = 'iconbtn hidden';
-  b.id = 'voiceHdrBtn';
-  b.title = 'Join voice chat';
-  b.textContent = '🎤';
-  b.onclick = async () => {
-    if (Net.room && Net.room.code) await Voice.join();
-  };
-  const mic = document.getElementById('micBtn');
-  if (mic) hdr.insertBefore(b, mic);
-  else hdr.appendChild(b);
-  return b;
-}
+// Voice UI lives in the voice panel now (hand-game style) — the header no
+// longer carries voice buttons. This stays as the sync hook its existing
+// call sites use.
 function updateVoiceHdrBtn() {
-  const b = ensureVoiceHdrBtn();
-  if (!b) return;
-  const C = (window as any)._C;
-  const show = !!(C && C.isNet && Net.room && Net.room.code && !Voice.active);
-  b.classList.toggle('hidden', !show);
+  try { Voice.syncPanel(); } catch (e) {}
 }
 
 window.addEventListener('beforeunload', () => { try { Friends.setOnline(false); } catch (e) {} });
@@ -546,20 +518,28 @@ const Net = {
   }
 };
 
-/* ================= VOICE (pure WebRTC over Firebase RTDB — the hand-game recipe) =================
-   No LiveKit, no token server, no API keys. Audio-only mesh between the
-   humans in a room; signaling lives under the room itself:
-     bgh_rooms/<code>/voice_presence/<uid> = { name, session, muted, ts }
-     bgh_rooms/<code>/voice_signals/<pair> = { offer, answer, cands/<push> }
-   pair = the two uids sorted + '_'. Each join stamps a session id and
-   signals from other sessions are ignored; offer/answer docs are
-   overwritten (set), never merged; every setRemoteDescription is guarded
-   by signalingState, so a rejoin can never throw InvalidStateError.
-   Only the lower uid offers (deterministic), so two players can never
-   both offer and deadlock. Failures show the real error name + message. */
+/* ================= VOICE (pure WebRTC over Firebase RTDB — the hand-game wiring) =================
+   Same engine as the hand game's VoiceChatWidget + voiceService, adapted
+   from Firestore to this hub's RTDB: audio-only mesh, signaling under
+   bgh_rooms/<code>/voice_presence + voice_signals, Google STUN, session
+   ids, overwrite-not-merge, signalingState guards, lower uid offers.
+   The panel matches the hand game's widget: a Live Voice Conversation
+   card with Join Voice Talk before joining, and the Voice Connected card
+   (Mic / Speaker / Leave / Collapse + participant cards with Speaking /
+   Muted / Connected states) while connected. Speaking is presence-driven
+   like the hand game: the local analyser (frequency avg > 14, 3-tick hold)
+   writes isSpeaking to presence; remote Speaking comes from presence.
+   One web-container difference: the hand game's installed app forces the
+   speaker on natively, so its <audio> elements are audible; a web page
+   cannot force that, so remote audio here plays through the AudioContext
+   (speaker/media path) instead of an <audio> element, which Android
+   Chrome routes to the earpiece. Deafen = remote gain 0, the same as the
+   hand game's audio.muted. */
 const Voice = {
   active: false,
+  connecting: false,
   micMuted: false,
+  speakerOff: false,
   stream: null as any,
   session: '',
   code: '',
@@ -568,9 +548,14 @@ const Voice = {
   present: {} as Record<string, boolean>,
   presenceInfo: {} as Record<string, any>,
   ctx: null as any,
+  remoteGain: null as any,
   localAnalyser: null as any,
   _localSrc: null as any,
   speakTimer: null as any,
+  _speakHold: 0,
+  _mySpeaking: false,
+  _panelCollapsed: false,
+  voiceError: '',
   _off: [] as Array<() => void>,
   configured() {
     // Voice needs exactly what online PvP needs: Firebase. No keys to paste.
@@ -590,57 +575,59 @@ const Voice = {
     if (!this.configured()) { toast('Voice talk needs Firebase (Profile → Setup).'); return false; }
     if (!Net.room || !Net.room.code) { toast('Join a room first.'); return false; }
     if (!Auth.user || !Auth.user.uid) { toast('Not signed in.'); return false; }
+    this.connecting = true;
+    this.voiceError = '';
+    this.code = String(Net.room.code);
+    this.myUid = String(Auth.user.uid);
+    this.session = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    this.syncPanel();
     try {
-      this.code = String(Net.room.code);
-      this.myUid = String(Auth.user.uid);
-      this.session = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
       // Capture ONCE and share that one stream with every peer connection.
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // AudioContext, created inside the tap gesture: remote call audio is
-      // played through it (media/speaker path) instead of an <audio>
-      // element, which Android Chrome routes to the earpiece like a phone
-      // call — the "connected but no sound" symptom. The same context feeds
-      // the speaking analyser (local stream only; never looped to output).
+      // AudioContext, created inside the tap gesture: it feeds the local
+      // speaking analyser and plays remote audio on the speaker/media
+      // path (an <audio> element would go to the earpiece on Android).
       try {
         const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
         this.ctx = new AC();
         if (this.ctx.resume) { const r = this.ctx.resume(); if (r && r.catch) r.catch(() => {}); }
         this._localSrc = this.ctx.createMediaStreamSource(this.stream);
         this.localAnalyser = this.ctx.createAnalyser();
-        this.localAnalyser.fftSize = 2048;
+        this.localAnalyser.fftSize = 256;
         this._localSrc.connect(this.localAnalyser);
+        this.remoteGain = this.ctx.createGain();
+        this.remoteGain.gain.value = 1;
+        this.remoteGain.connect(this.ctx.destination);
       } catch (e) { console.warn(e); }
       const pres = this._presRef();
-      await pres.set({ name: Auth.user.username || 'Player', session: this.session, muted: false, ts: Date.now() });
+      await pres.set({ name: Auth.user.username || 'Player', session: this.session, muted: false, isSpeaking: false, ts: Date.now() });
       try { pres.onDisconnect().remove(); } catch (e) {}
       const pr = Backend.db.ref('bgh_rooms/' + this.code + '/voice_presence');
       const addH = (snap: any) => {
         const uid = String(snap.key);
         const v = snap.val() || {};
         this.present[uid] = true;
-        this.presenceInfo[uid] = { name: v.name || 'Player', muted: !!v.muted };
+        this.presenceInfo[uid] = { name: v.name || 'Player', muted: !!v.muted, isSpeaking: !!v.isSpeaking };
         if (uid !== this.myUid) this._onPeerSeen(uid, v.session);
-        this._updateCount();
-        this._renderPanelRows();
+        this._renderPanel();
       };
       const chgH = (snap: any) => {
         const uid = String(snap.key);
         const v = snap.val() || {};
         if (uid === this.myUid) return;
-        this.presenceInfo[uid] = { name: v.name || 'Player', muted: !!v.muted };
+        this.presenceInfo[uid] = { name: v.name || 'Player', muted: !!v.muted, isSpeaking: !!v.isSpeaking };
         // Session changed = that player rejoined: drop the old peer, start clean.
         const old = this.peers[uid];
         if (old && old.session !== v.session) this._dropPeer(uid);
         this._onPeerSeen(uid, v.session);
-        this._renderPanelRows();
+        this._renderPanel();
       };
       const remH = (snap: any) => {
         const uid = String(snap.key);
         delete this.present[uid];
         delete this.presenceInfo[uid];
         if (uid !== this.myUid) this._dropPeer(uid);
-        this._updateCount();
-        this._renderPanelRows();
+        this._renderPanel();
       };
       pr.on('child_added', addH);
       pr.on('child_changed', chgH);
@@ -649,12 +636,11 @@ const Voice = {
       this._off.push(() => pr.off('child_changed', chgH));
       this._off.push(() => pr.off('child_removed', remH));
       this.active = true;
+      this.connecting = false;
       this.micMuted = false;
-      const mb = $('#micBtn');
-      if (mb) mb.classList.remove('hidden');
-      this._micIcon();
-      this._updateCount();
-      this._setPanelVisible(true);
+      this.speakerOff = false;
+      this._panelCollapsed = false;
+      this.syncPanel();
       this._startSpeakPoll();
       updateVoiceHdrBtn();
       toast('Voice connected — talk to your opponents');
@@ -663,9 +649,12 @@ const Voice = {
       console.warn(e);
       // Raw error first, always. NotAllowedError gets one actionable line
       // after it: the browser blocked the mic, so the fix is in site settings.
+      const raw = 'Voice error: ' + (e && e.name ? e.name + ': ' : '') + (e && e.message ? e.message : e);
       const hint = (e && e.name === 'NotAllowedError') ? ' — allow the microphone for this site in your browser settings, reload, then try again.' : '';
-      toast('Voice error: ' + (e && e.name ? e.name + ': ' : '') + (e && e.message ? e.message : e) + hint);
-      this.leave();
+      toast(raw + hint);
+      this._teardown();
+      this.voiceError = raw + hint;
+      this.syncPanel();
       return false;
     }
   },
@@ -689,23 +678,19 @@ const Voice = {
         try { this._sigRef(pair).child('cands').push({ from: this.myUid, session: this.session, cand: ev.candidate.toJSON() }); } catch (e) {}
       }
     };
-    // Remote audio plays through the AudioContext (speaker path), not an
-    // <audio> element — Android Chrome routes <audio> call audio to the
-    // earpiece, which reads as "connected but no sound". The same source
-    // feeds a speaking analyser for the voice panel.
+    // Remote audio goes through the shared remote gain (speaker path) so
+    // the speaker/deafen button can silence it, like the hand game's
+    // audio.muted. No remote analyser: remote Speaking comes from presence.
     pc.ontrack = (ev: any) => {
       try {
         const rs = (ev.streams && ev.streams[0]) || (() => { const st = new MediaStream(); st.addTrack(ev.track); return st; })();
         peer.remoteStream = rs;
-        if (this.ctx) {
+        if (this.ctx && this.remoteGain) {
           const rsrc = this.ctx.createMediaStreamSource(rs);
-          rsrc.connect(this.ctx.destination);
-          const ran = this.ctx.createAnalyser();
-          ran.fftSize = 2048;
-          rsrc.connect(ran);
-          peer.audioNodes = { src: rsrc, analyser: ran };
+          rsrc.connect(this.remoteGain);
+          peer.audioNodes = { src: rsrc };
         }
-        this._renderPanelRows();
+        this._renderPanel();
       } catch (e) { console.warn(e); }
     };
     const sig = this._sigRef(pair);
@@ -749,7 +734,7 @@ const Voice = {
         } catch (e) { console.warn(e); }
       })();
     }
-    this._updateCount();
+    this._renderPanel();
   },
   _flushPending(peer: any) {
     const list = peer.pending || [];
@@ -765,45 +750,27 @@ const Voice = {
     try { peer.pc.close(); } catch (e) {}
     try { if (peer.audioNodes) peer.audioNodes.src.disconnect(); } catch (e) {}
     delete this.peers[uid];
-    this._updateCount();
-    this._renderPanelRows();
-  },
-  _micIcon() {
-    const mb = $('#micBtn');
-    if (mb) { mb.textContent = this.micMuted ? '🚫' : '🎤'; mb.classList.toggle('off', this.micMuted); }
-    const pm = document.getElementById('voicePanelMic');
-    if (pm) { pm.textContent = this.micMuted ? '🚫' : '🎤'; pm.classList.toggle('off', this.micMuted); }
-  },
-  _updateCount() {
-    let c = document.getElementById('voiceCount');
-    if (!c) {
-      const hdr = document.querySelector('header');
-      if (!hdr) return;
-      c = document.createElement('span');
-      c.id = 'voiceCount';
-      c.className = 'pill gold hidden';
-      const mic = document.getElementById('micBtn');
-      if (mic) hdr.insertBefore(c, mic);
-      else hdr.appendChild(c);
-    }
-    const n = Object.keys(this.present).length;
-    c.textContent = n + ' in call';
-    c.classList.toggle('hidden', !this.active || n === 0);
-    const pc2 = document.getElementById('voicePanelCount');
-    if (pc2) pc2.textContent = n + ' in call';
+    this._renderPanel();
   },
   toggleMic() {
     if (!this.active || !this.stream) return;
     this.micMuted = !this.micMuted;
+    if (this.micMuted) this._mySpeaking = false;
     try { this.stream.getAudioTracks().forEach((t: any) => { t.enabled = !this.micMuted; }); } catch (e) {}
-    try { this._presRef().update({ muted: this.micMuted }); } catch (e) {}
-    this._micIcon();
-    this._renderPanelRows();
+    try { this._presRef().update({ muted: this.micMuted, isSpeaking: false }); } catch (e) {}
+    this._renderPanel();
   },
-  // Hand-game-style voice panel: fixed above the bottom nav (so game
-  // re-renders never wipe it), with a row per player and a live Speaking
-  // indicator driven by the analysers. If a remote row lights up while you
-  // hear nothing, audio is arriving and the problem is playout, not the call.
+  toggleDeafen() {
+    if (!this.active) return;
+    this.speakerOff = !this.speakerOff;
+    try { if (this.remoteGain) this.remoteGain.gain.value = this.speakerOff ? 0 : 1; } catch (e) {}
+    this._renderPanel();
+  },
+  // Panel: the hand game's widget, rendered into a fixed card above the
+  // bottom nav so game re-renders never wipe it. Visible whenever the
+  // player is in a room: Join card before connecting, Voice Connected
+  // card while connected. One delegated click handler, so re-renders
+  // never drop button bindings.
   _ensurePanel() {
     let p = document.getElementById('voicePanel');
     if (p) return p;
@@ -812,86 +779,98 @@ const Voice = {
     p.className = 'hidden';
     const nav = document.getElementById('bottomNav');
     p.style.cssText = 'position:fixed;left:10px;right:10px;bottom:' + ((nav ? nav.offsetHeight : 60) + 8) + 'px;z-index:90;';
-    p.innerHTML = '<div class="card" style="margin:0">'
-      + '<div class="row" style="align-items:center;gap:8px">'
-      + '<span style="font-weight:800">🎤 Voice Connected</span>'
-      + '<span class="pill gold" id="voicePanelCount">1 in call</span>'
-      + '<span style="flex:1"></span>'
-      + '<button class="iconbtn" id="voicePanelMic" title="Mute microphone">🎤</button>'
-      + '<button class="iconbtn" id="voicePanelLeave" title="Leave voice chat">✕</button>'
-      + '<button class="iconbtn" id="voicePanelCollapse" title="Collapse">⌄</button>'
-      + '</div><div id="voicePanelBody" style="margin-top:6px"></div></div>';
     document.body.appendChild(p);
-    const mic = p.querySelector('#voicePanelMic');
-    if (mic) mic.addEventListener('click', () => this.toggleMic());
-    const lv = p.querySelector('#voicePanelLeave');
-    if (lv) lv.addEventListener('click', () => this.leave());
-    const col = p.querySelector('#voicePanelCollapse');
-    if (col) col.addEventListener('click', () => {
-      const b = p.querySelector('#voicePanelBody') as HTMLElement;
-      if (!b) return;
-      const hid = b.classList.toggle('hidden');
-      col.textContent = hid ? '⌃' : '⌄';
+    p.addEventListener('click', (ev: any) => {
+      const t = (ev.target as HTMLElement).closest ? (ev.target as HTMLElement).closest('[data-vp-action]') as HTMLElement : null;
+      if (!t) return;
+      try { Sound.click(); } catch (e) {}
+      const a = t.getAttribute('data-vp-action');
+      if (a === 'join') this.join();
+      else if (a === 'mic') this.toggleMic();
+      else if (a === 'speaker') this.toggleDeafen();
+      else if (a === 'leave') this.leave();
+      else if (a === 'collapse') { this._panelCollapsed = !this._panelCollapsed; this._renderPanel(); }
     });
     return p;
   },
-  _setPanelVisible(show: boolean) {
+  syncPanel() {
     const p = this._ensurePanel();
-    p.classList.toggle('hidden', !show);
-    if (show) this._renderPanelRows();
+    if (!Net.room || !Net.room.code) { p.classList.add('hidden'); return; }
+    p.classList.remove('hidden');
+    this._renderPanel();
   },
-  _panelRow(uid: string, name: string, muted: boolean) {
-    return '<div class="row" style="align-items:center;gap:8px;padding:3px 0"><span>🎧</span><span style="flex:1">' + esc(name) + '</span><span class="vp-speak" data-vp-speak="' + esc(uid) + '"><span class="vp-bars"><i></i><i></i><i></i></span><span class="vp-label">' + (muted ? '🚫 Muted' : '') + '</span></span></div>';
+  _errHtml() {
+    return this.voiceError
+      ? '<div class="vp-err"><span>⚠️</span><span>' + esc(this.voiceError) + '</span></div>'
+      : '';
   },
-  _renderPanelRows() {
-    const body = document.getElementById('voicePanelBody');
-    if (!body) return;
+  _partRow(uid: string, name: string, isMe: boolean, muted: boolean, speaking: boolean) {
+    const status = speaking
+      ? '<span class="vp-bars"><i></i><i></i><i></i></span><span>Speaking</span>'
+      : (muted ? 'Muted' : 'Connected');
+    const cls = speaking ? 'vp-status speaking' : (muted ? 'vp-status muted' : 'vp-status idle');
+    return '<div class="vp-part' + (speaking ? ' speaking' : '') + '">'
+      + '<div class="vp-av"><div class="vp-av-circle">🎧</div>' + (muted ? '<span class="vp-muted-badge">🚫</span>' : '') + '</div>'
+      + '<div style="min-width:0"><div style="display:flex;align-items:center;gap:4px"><span class="vp-name">' + esc(name) + '</span>' + (isMe ? '<span class="vp-you">(You)</span>' : '') + '</div>'
+      + '<div class="' + cls + '">' + status + '</div></div></div>';
+  },
+  _renderPanel() {
+    const p = document.getElementById('voicePanel');
+    if (!p || p.classList.contains('hidden')) return;
+    const n = Object.keys(this.present).length;
+    if (this.connecting) {
+      p.innerHTML = '<div class="vp-card" style="border-color:rgba(245,158,11,.3)"><div class="vp-connecting"><span class="vp-spinner"></span><span>Accessing microphone &amp; connecting voice...</span></div></div>';
+      return;
+    }
+    if (!this.active) {
+      p.innerHTML = '<div class="vp-card"><div class="vp-join-wrap"><div class="vp-join-left"><div class="vp-radio">📻</div><div><div class="vp-join-title">Live Voice Conversation</div><div class="vp-join-sub">Talk in real-time with other humans at the table</div></div></div><button class="vp-join-btn" data-vp-action="join">🎤 Join Voice Talk</button></div>' + this._errHtml() + '</div>';
+      return;
+    }
     const rows: string[] = [];
     const me = this.presenceInfo[this.myUid];
-    if (me) rows.push(this._panelRow(this.myUid, me.name + ' (You)', !!me.muted));
+    if (me) rows.push(this._partRow(this.myUid, me.name, true, !!me.muted, this._mySpeaking));
     Object.keys(this.presenceInfo).forEach(uid => {
       if (uid === this.myUid) return;
-      const p = this.presenceInfo[uid];
-      rows.push(this._panelRow(uid, p.name || 'Player', !!p.muted));
+      const info = this.presenceInfo[uid];
+      rows.push(this._partRow(uid, info.name || 'Player', false, !!info.muted, !!info.isSpeaking));
     });
-    body.innerHTML = rows.join('') || '<div class="muted">Waiting for others to join voice…</div>';
+    p.innerHTML = '<div class="vp-card"><div class="vp-head"><div class="vp-head-left"><span class="vp-dot"><i class="ping"></i><i></i></span><span class="vp-title">📻 Voice Connected</span><span class="vp-pill">' + n + ' in call</span></div><div class="vp-actions">'
+      + '<button class="vp-btn ' + (this.micMuted ? 'mic-off' : 'mic-on') + '" data-vp-action="mic" title="' + (this.micMuted ? 'Unmute Microphone' : 'Mute Microphone') + '">' + (this.micMuted ? '🚫' : '🎤') + '<span class="vp-btn-label">' + (this.micMuted ? 'Muted' : 'Mic On') + '</span></button>'
+      + '<button class="vp-btn ' + (this.speakerOff ? 'deaf' : '') + '" data-vp-action="speaker" title="' + (this.speakerOff ? 'Undeafen Audio' : 'Deafen (Mute Incoming)') + '">' + (this.speakerOff ? '🔇' : '🔊') + '</button>'
+      + '<button class="vp-btn leave" data-vp-action="leave" title="Disconnect Voice Talk">📴</button>'
+      + '<button class="vp-btn collapse" data-vp-action="collapse" title="' + (this._panelCollapsed ? 'Expand voice list' : 'Collapse voice list') + '">' + (this._panelCollapsed ? '⌃' : '⌄') + '</button>'
+      + '</div></div>' + this._errHtml()
+      + (this._panelCollapsed ? '' : '<div class="vp-parts">' + (rows.join('') || '<div class="muted">Waiting for others to join voice…</div>') + '</div>')
+      + '</div>';
   },
-  _speakLevel(an: any) {
-    if (!an) return 0;
-    try {
-      const buf = new Uint8Array(an.fftSize);
-      an.getByteTimeDomainData(buf);
-      let sum = 0;
-      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
-      return Math.sqrt(sum / buf.length);
-    } catch (e) { return 0; }
+  _setSpeaking(on: boolean) {
+    if (on === this._mySpeaking) return;
+    this._mySpeaking = on;
+    try { this._presRef().update({ isSpeaking: on }); } catch (e) {}
+    this._renderPanel();
   },
   _startSpeakPoll() {
     this._stopSpeakPoll();
     this.speakTimer = setInterval(() => {
-      if (!this.active) return;
-      const setRow = (uid: string, speaking: boolean, hasAudio: boolean, muted: boolean) => {
-        const el = document.querySelector('[data-vp-speak="' + uid + '"]');
-        if (!el) return;
-        const lab = el.querySelector('.vp-label');
-        if (muted) { el.classList.remove('on'); if (lab) lab.textContent = '🚫 Muted'; }
-        else if (!hasAudio) { el.classList.remove('on'); if (lab) lab.textContent = ''; }
-        else { el.classList.toggle('on', speaking); if (lab) lab.textContent = speaking ? 'Speaking' : ''; }
-      };
-      setRow(this.myUid, !this.micMuted && this._speakLevel(this.localAnalyser) > 0.02, !!this.localAnalyser, this.micMuted);
-      Object.keys(this.peers).forEach(uid => {
-        const p = this.peers[uid];
-        const an = p.audioNodes ? p.audioNodes.analyser : null;
-        const muted = !!(this.presenceInfo[uid] && this.presenceInfo[uid].muted);
-        setRow(uid, !muted && this._speakLevel(an) > 0.02, !!an, muted);
-      });
+      if (!this.active || !this.localAnalyser) return;
+      if (this.micMuted) { if (this._mySpeaking) this._setSpeaking(false); return; }
+      try {
+        const buf = new Uint8Array(this.localAnalyser.frequencyBinCount);
+        this.localAnalyser.getByteFrequencyData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i];
+        const avg = sum / buf.length;
+        if (avg > 14) this._speakHold = 3;
+        else if (this._speakHold > 0) this._speakHold--;
+        this._setSpeaking(this._speakHold > 0);
+      } catch (e) {}
     }, 150);
   },
   _stopSpeakPoll() {
     if (this.speakTimer) { try { clearInterval(this.speakTimer); } catch (e) {} }
     this.speakTimer = null;
   },
-  leave() {
+  _teardown() {
     this._off.forEach(f => { try { f(); } catch (e) {} });
     this._off = [];
     const uids = Object.keys(this.peers);
@@ -902,11 +881,8 @@ const Voice = {
     this._stopSpeakPoll();
     try { if (this._localSrc) this._localSrc.disconnect(); } catch (e) {}
     try { if (this.ctx && this.ctx.close) this.ctx.close(); } catch (e) {}
-    this.ctx = null; this.localAnalyser = null; this._localSrc = null;
-    const vp = document.getElementById('voicePanel');
-    if (vp) vp.classList.add('hidden');
-    if (this.stream) { try { this.stream.getTracks().forEach((t: any) => t.stop()); } catch (e) {} }
-    this.stream = null;
+    this.ctx = null; this.remoteGain = null; this.localAnalyser = null; this._localSrc = null;
+    this._speakHold = 0; this._mySpeaking = false;
     // Best effort: remove my presence + the signal docs I took part in, so
     // nothing stale survives into the next session.
     if (Backend.db && this.code && this.myUid) {
@@ -916,15 +892,19 @@ const Voice = {
         try { Backend.db.ref('bgh_rooms/' + code + '/voice_signals/' + this._pairId(me, u)).remove(); } catch (e) {}
       });
     }
+    if (this.stream) { try { this.stream.getTracks().forEach((t: any) => t.stop()); } catch (e) {} }
+    this.stream = null;
     this.active = false;
+    this.connecting = false;
     this.micMuted = false;
+    this.speakerOff = false;
     this.code = '';
     this.session = '';
-    const mb = $('#micBtn');
-    if (mb) mb.classList.add('hidden');
-    const vc = document.getElementById('voiceCount');
-    if (vc) vc.classList.add('hidden');
-    updateVoiceHdrBtn();
+  },
+  leave() {
+    this._teardown();
+    this.voiceError = '';
+    this.syncPanel();
   }
 };
 
