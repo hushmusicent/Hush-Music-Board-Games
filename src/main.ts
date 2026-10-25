@@ -651,9 +651,23 @@ const Voice = {
       // after it: the browser blocked the mic, so the fix is in site settings.
       const raw = 'Voice error: ' + (e && e.name ? e.name + ': ' : '') + (e && e.message ? e.message : e);
       const hint = (e && e.name === 'NotAllowedError') ? ' — allow the microphone for this site in your browser settings, reload, then try again.' : '';
+      // Name the layer that blocked it, so the next tap settles frame vs
+      // permission instead of guessing: mic-policy comes from the frame
+      // around the app (the preview iframe can block it no matter what
+      // the code does), perm is the stored per-origin permission state.
+      let diag = '';
+      try {
+        const inFrame = window.self !== window.top ? 'iframe' : 'top';
+        const secure = (window as any).isSecureContext ? 'secure' : 'not-secure';
+        let pol = '?';
+        try { const pp = (document as any).permissionsPolicy; if (pp && pp.allowsFeature) pol = pp.allowsFeature('microphone') ? 'allowed' : 'blocked'; } catch (e2) {}
+        let perm = '?';
+        try { const q = await (navigator as any).permissions.query({ name: 'microphone' }); perm = q.state; } catch (e2) {}
+        diag = ' [frame:' + inFrame + ' ' + secure + ' mic-policy:' + pol + ' perm:' + perm + ']';
+      } catch (e2) {}
       toast(raw + hint);
       this._teardown();
-      this.voiceError = raw + hint;
+      this.voiceError = raw + hint + diag;
       this.syncPanel();
       return false;
     }
