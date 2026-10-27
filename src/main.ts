@@ -842,6 +842,19 @@ const Voice = {
     try { if (this.remoteGain) this.remoteGain.gain.value = this.speakerOff ? 0 : 1; } catch (e) {}
     this._renderPanel();
   },
+  _testVoiceTone() {
+    try {
+      if (!this.ctx) return;
+      if (this.ctx.resume) { const r = this.ctx.resume(); if (r && r.catch) r.catch(() => {}); }
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = 'sine'; o.frequency.value = 880;
+      g.gain.setValueAtTime(.25, this.ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(.001, this.ctx.currentTime + .6);
+      o.connect(g); g.connect(this.ctx.destination);
+      o.start(); o.stop(this.ctx.currentTime + .6);
+      this._renderPanel();
+    } catch (e) {}
+  },
   // Panel: the hand game's widget, rendered into a fixed card above the
   // bottom nav so game re-renders never wipe it. Visible whenever the
   // player is in a room: Join card before connecting, Voice Connected
@@ -865,6 +878,7 @@ const Voice = {
       if (a === 'join') this.join();
       else if (a === 'mic') this.toggleMic();
       else if (a === 'speaker') this.toggleDeafen();
+      else if (a === 'test') this._testVoiceTone();
       else if (a === 'leave') this.leave();
       else if (a === 'collapse') { this._panelCollapsed = !this._panelCollapsed; this._renderPanel(); }
     });
@@ -915,9 +929,10 @@ const Voice = {
     p.innerHTML = '<div class="vp-card"><div class="vp-head"><div class="vp-head-left"><span class="vp-dot"><i class="ping"></i><i></i></span><span class="vp-title">📻 Voice Connected</span><span class="vp-pill">' + n + ' in call</span></div><div class="vp-actions">'
       + '<button class="vp-btn ' + (this.micMuted ? 'mic-off' : 'mic-on') + '" data-vp-action="mic" title="' + (this.micMuted ? 'Unmute Microphone' : 'Mute Microphone') + '">' + (this.micMuted ? '🚫' : '🎤') + '<span class="vp-btn-label">' + (this.micMuted ? 'Muted' : 'Mic On') + '</span></button>'
       + '<button class="vp-btn ' + (this.speakerOff ? 'deaf' : '') + '" data-vp-action="speaker" title="' + (this.speakerOff ? 'Undeafen Audio' : 'Deafen (Mute Incoming)') + '">' + (this.speakerOff ? '🔇' : '🔊') + '</button>'
+      + '<button class="vp-btn" data-vp-action="test" title="Play a test tone through the voice audio path">🔔<span class="vp-btn-label">Test</span></button>'
       + '<button class="vp-btn leave" data-vp-action="leave" title="Disconnect Voice Talk">📴</button>'
       + '<button class="vp-btn collapse" data-vp-action="collapse" title="' + (this._panelCollapsed ? 'Expand voice list' : 'Collapse voice list') + '">' + (this._panelCollapsed ? '⌃' : '⌄') + '</button>'
-      + '</div></div>' + this._errHtml()
+      + '</div></div><div class="vp-diag" style="font-size:12px;opacity:.85;padding:2px 10px;">ctx: ' + (this.ctx ? this.ctx.state : 'none') + ' · gain: ' + (this.remoteGain ? this.remoteGain.gain.value : 'none') + '</div>' + this._errHtml()
       + (this.sigError ? '<div class="vp-err"><span>⚠️</span><span>' + esc(this.sigError) + '</span></div>' : '')
       + (this._panelCollapsed ? '' : '<div class="vp-parts">' + (rows.join('') || '<div class="muted">Waiting for others to join voice…</div>') + '</div>')
       + '</div>';
