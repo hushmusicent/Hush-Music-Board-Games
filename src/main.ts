@@ -598,7 +598,7 @@ const Voice = {
         this.localAnalyser.fftSize = 256;
         this._localSrc.connect(this.localAnalyser);
         this.remoteGain = this.ctx.createGain();
-        this.remoteGain.gain.value = 1;
+        this.remoteGain.gain.value = 2.5;
         this.remoteGain.connect(this.ctx.destination);
       } catch (e) { console.warn(e); }
       const pres = this._presRef();
@@ -810,7 +810,13 @@ const Voice = {
     const ice = (peer.pc && peer.pc.iceConnectionState) || '?';
     if (!peer.remoteStream) return 'waiting for audio · ice: ' + ice;
     if (!peer.audioNodes) return 'track arrived, NOT wired to speakers';
-    return 'audio wired to speakers · ice: ' + ice;
+    let ts = '';
+    try {
+      const tr = peer.remoteStream.getAudioTracks ? peer.remoteStream.getAudioTracks()[0] : null;
+      if (tr) ts = ' · track: ' + (tr.enabled ? (tr.muted ? 'muted' : 'live') : 'disabled') + '/' + tr.readyState;
+      else ts = ' · track: none';
+    } catch (e) {}
+    return 'audio wired to speakers · ice: ' + ice + ts;
   },
   _flushPending(peer: any) {
     const list = peer.pending || [];
@@ -839,7 +845,7 @@ const Voice = {
   toggleDeafen() {
     if (!this.active) return;
     this.speakerOff = !this.speakerOff;
-    try { if (this.remoteGain) this.remoteGain.gain.value = this.speakerOff ? 0 : 1; } catch (e) {}
+    try { if (this.remoteGain) this.remoteGain.gain.value = this.speakerOff ? 0 : 2.5; } catch (e) {}
     this._renderPanel();
   },
   _testVoiceTone() {
