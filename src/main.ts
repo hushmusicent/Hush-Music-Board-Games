@@ -690,11 +690,26 @@ const Voice = {
     // first; the relay is used ONLY if the two phones cannot reach each
     // other directly (e.g. symmetric NATs) — which otherwise means
     // presence works but no voice in either direction.
-    const pc = new RTCPeerConnection({ iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    ] });
+    // If this phone's browser rejects the full server list (some WebViews
+    // do), fall back to STUN-only rather than dying silently with no peer,
+    // no answer, and no candidates while presence keeps working fine.
+    // If even that fails, say so in the panel instead of failing silently.
+    let pc: any = null;
+    try {
+      pc = new RTCPeerConnection({ iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      ] });
+    } catch (e1) {
+      try {
+        pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      } catch (e2: any) {
+        this.sigError = 'peer connection failed: ' + (e2 && e2.message ? e2.message : e2);
+        this._renderPanel();
+        return;
+      }
+    }
     const peer: any = { pc, session, pending: [] as any[] };
     this.peers[uid] = peer;
     try { this.stream.getTracks().forEach((t: any) => pc.addTrack(t, this.stream)); } catch (e) {}
