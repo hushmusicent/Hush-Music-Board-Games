@@ -745,11 +745,11 @@ const Voice = {
       try {
         if (v.offer && v.offer.from !== this.myUid && v.offer.session === peer.session && pc.signalingState === 'stable' && !peer.offerAnswered) {
           peer._sigBusy = true;
-          await pc.setRemoteDescription(new RTCSessionDescription(v.offer.sdp));
+          await pc.setRemoteDescription(new RTCSessionDescription({ type: v.offer.type, sdp: v.offer.sdp }));
           const ans = await pc.createAnswer();
           await pc.setLocalDescription(ans);
           try {
-            await sig.child('answer').set({ from: this.myUid, session: this.session, sdp: pc.localDescription });
+            await sig.child('answer').set({ from: this.myUid, session: this.session, sdp: ans.sdp, type: ans.type });
             peer.offerAnswered = true;
           } catch (e: any) {
             this.sigError = 'answer write failed: ' + (e && e.message ? e.message : e);
@@ -758,10 +758,10 @@ const Voice = {
           this._flushPending(peer);
         } else if (v.answer && v.answer.from !== this.myUid && v.answer.session === peer.session && pc.signalingState === 'have-local-offer') {
           peer._sigBusy = true;
-          await pc.setRemoteDescription(new RTCSessionDescription(v.answer.sdp));
+          await pc.setRemoteDescription(new RTCSessionDescription({ type: v.answer.type, sdp: v.answer.sdp }));
           this._flushPending(peer);
         }
-      } catch (e) { console.warn(e); } finally { peer._sigBusy = false; }
+      } catch (e: any) { this.sigError = 'voice negotiation failed: ' + (e && e.message ? e.message : e); this._renderPanel(); console.warn(e); } finally { peer._sigBusy = false; }
     };
     sig.on('value', valH);
     const candH = (snap: any) => {
@@ -784,7 +784,7 @@ const Voice = {
         try {
           const off = await pc.createOffer();
           await pc.setLocalDescription(off);
-          await sig.child('offer').set({ from: this.myUid, session: this.session, sdp: pc.localDescription });
+          await sig.child('offer').set({ from: this.myUid, session: this.session, sdp: off.sdp, type: off.type });
         } catch (e: any) { this.sigError = 'offer write failed: ' + (e && e.message ? e.message : e); this._renderPanel(); console.warn(e); }
       })();
     }
