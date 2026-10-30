@@ -1,0 +1,18 @@
+Fix the board hub voice: no sound in either direction, even though every indicator is green.
+
+PROVEN WORKING (do not break these):
+- Signaling: offers and answers carry real SDP strings (fixed earlier — never store the native RTCSessionDescription object, Firebase drops it). First-ever answer and candidates from both sides are confirmed in the live database.
+- ICE: connected on both phones.
+- Panel: Voice Connected, 2 in call, both rows Speaking.
+- Output: the panel's Test button plays a tone that IS heard on the phone, so the AudioContext-to-speaker path works.
+- Panel diagnostics read: ctx: running, gain: 2.5, and the remote row reads "audio wired to speakers · ice: connected · track: live/live".
+- Volume, speaker button, and Bluetooth have been checked and ruled out.
+
+PROVEN BROKEN:
+- Neither phone hears the other. It is silent in BOTH directions, not one phone's speaker or mic.
+- The remote track is live (enabled, unmuted, readyState live), wired through MediaStreamSource to remoteGain (2.5) to the AudioContext destination, and the context is running — yet no voice comes out, while an oscillator tone through the same destination IS heard.
+
+YOUR TASK (in src/main.ts, Voice object):
+- Find why the remote voice track delivers silence even though the track is live and the output chain works for a generated tone. Suspects: the MediaStreamSource is reading a stream that carries no samples, the sender's track is not the mic track that the local speaking indicator reads, or the wired nodes are not the nodes connected to the live destination. Check the actual sender addTrack call, the receiver ontrack stream handling, and _wireRemoteAudio end to end.
+- Fix it so real voice flows both ways. Keep the existing signaling (SDP strings), the panel, the Test button, and the ctx/gain/track-state diagnostic lines. Do not change the game itself.
+- Do NOT treat panel indicators as proof. The acceptance test is: two phones in one room, in the AI Studio preview, join voice, and each phone actually hears the other phone speaking. Speaking bars, "ice: connected", and "audio wired" are not a pass — only heard sound is.

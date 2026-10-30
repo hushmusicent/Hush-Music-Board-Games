@@ -586,9 +586,13 @@ const Voice = {
     try {
       // Capture ONCE and share that one stream with every peer connection.
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      try {
+        if ((navigator as any).audioSession) {
+          (navigator as any).audioSession.type = 'play-and-record';
+        }
+      } catch (e) {}
       // AudioContext, created inside the tap gesture: it feeds the local
-      // speaking analyser and plays remote audio on the speaker/media
-      // path (an <audio> element would go to the earpiece on Android).
+      // speaking analyser and plays remote audio on the speaker/media path.
       try {
         const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
         this.ctx = new AC();
@@ -600,6 +604,12 @@ const Voice = {
         this.remoteGain = this.ctx.createGain();
         this.remoteGain.gain.value = 2.5;
         this.remoteGain.connect(this.ctx.destination);
+        if (!(window as any)._voiceResumeHooked) {
+          (window as any)._voiceResumeHooked = true;
+          const res = () => { try { if (this.ctx && this.ctx.state === 'suspended' && this.ctx.resume) this.ctx.resume(); } catch (e) {} };
+          window.addEventListener('touchstart', res, { passive: true });
+          window.addEventListener('click', res, { passive: true });
+        }
       } catch (e) { console.warn(e); }
       const pres = this._presRef();
       await pres.set({ name: Auth.user.username || 'Player', session: this.session, muted: false, isSpeaking: false, ts: Date.now() });
@@ -712,7 +722,19 @@ const Voice = {
     }
     const peer: any = { pc, session, pending: [] as any[] };
     this.peers[uid] = peer;
-    try { this.stream.getTracks().forEach((t: any) => pc.addTrack(t, this.stream)); } catch (e) {}
+    try {
+      this.stream.getAudioTracks().forEach((t: any) => {
+        t.enabled = !this.micMuted;
+        pc.addTrack(t, this.stream);
+      });
+      if (pc.getTransceivers) {
+        pc.getTransceivers().forEach((tc: any) => {
+          if (tc.direction && tc.direction !== 'sendrecv') {
+            tc.direction = 'sendrecv';
+          }
+        });
+      }
+    } catch (e) {}
     pc.onicecandidate = (ev: any) => {
       if (ev.candidate) {
         try {
@@ -725,14 +747,29 @@ const Voice = {
     // the speaker/deafen button can silence it, like the hand game's
     // audio.muted. No remote analyser: remote Speaking comes from presence.
     // The mic-to-speaker chain: remote track -> MediaStreamSource ->
-    // shared remote gain -> speakers. Wired only through _wireRemoteAudio,
-    // so a track that arrives before the AudioContext exists still gets
-    // hooked up, a suspended context is resumed, and a re-fired track
-    // never double-wires.
+    // shared remote gain -> speakers. Wired through _wireRemoteAudio,
+    // re-wired on track.onunmute when RTP packets arrive, with a playing
+    // HTML media bridge element to activate Chromium's WebRTC audio sink.
     pc.ontrack = (ev: any) => {
       try {
-        const rs = (ev.streams && ev.streams[0]) || (() => { const st = new MediaStream(); st.addTrack(ev.track); return st; })();
+        const track = ev.track;
+        let rs = (ev.streams && ev.streams[0]) ? ev.streams[0] : null;
+        if (!rs) {
+          rs = new MediaStream([track]);
+        } else if (track && !rs.getAudioTracks().some((t: any) => t.id === track.id)) {
+          try { rs.addTrack(track); } catch (e) {}
+        }
         peer.remoteStream = rs;
+        peer.remoteTrack = track;
+        if (track) {
+          track.onunmute = () => {
+            this._wireRemoteAudio(peer);
+            this._renderPanel();
+          };
+          track.onended = () => {
+            this._renderPanel();
+          };
+        }
         this._wireRemoteAudio(peer);
         this._renderPanel();
       } catch (e) { console.warn(e); }
@@ -782,7 +819,7 @@ const Voice = {
     if (this.myUid < uid) {
       (async () => {
         try {
-          const off = await pc.createOffer();
+          const off = await pc.createOffer({ offerToReceiveAudio: true });
           await pc.setLocalDescription(off);
           await sig.child('offer').set({ from: this.myUid, session: this.session, sdp: off.sdp, type: off.type });
         } catch (e: any) { this.sigError = 'offer write failed: ' + (e && e.message ? e.message : e); this._renderPanel(); console.warn(e); }
@@ -793,12 +830,37 @@ const Voice = {
   _wireRemoteAudio(peer: any) {
     if (!peer || !peer.remoteStream) return;
     if (!this.ctx || !this.remoteGain) return; // retried via ontrack once the context exists
-    try { if (peer.audioNodes) peer.audioNodes.src.disconnect(); } catch (e) {}
+    if (this.ctx.state === 'suspended' && this.ctx.resume) {
+      const r = this.ctx.resume();
+      if (r && r.catch) r.catch(() => {});
+    }
+    // Chromium WebRTC bug workaround: Chromium only starts decoding incoming WebRTC RTP audio
+    // packets into createMediaStreamSource if an HTMLMediaElement is attached and playing.
+    const isChromium = !!((window as any).chrome) || /Chrome|Chromium|Android|CriOS/i.test(navigator.userAgent);
+    if (isChromium) {
+      if (!peer.audioBridge) {
+        const el = document.createElement('audio');
+        el.autoplay = true;
+        (el as any).playsInline = true;
+        el.setAttribute('playsinline', 'true');
+        el.muted = true;
+        el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0.01;pointer-events:none;';
+        document.body.appendChild(el);
+        peer.audioBridge = el;
+      }
+      try {
+        if (peer.audioBridge.srcObject !== peer.remoteStream) {
+          peer.audioBridge.srcObject = peer.remoteStream;
+        }
+        const p = peer.audioBridge.play();
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) {}
+    }
+    try { if (peer.audioNodes && peer.audioNodes.src) peer.audioNodes.src.disconnect(); } catch (e) {}
     try {
       const rsrc = this.ctx.createMediaStreamSource(peer.remoteStream);
       rsrc.connect(this.remoteGain);
       peer.audioNodes = { src: rsrc };
-      if (this.ctx.state === 'suspended' && this.ctx.resume) { const r = this.ctx.resume(); if (r && r.catch) r.catch(() => {}); }
     } catch (e) { console.warn(e); }
   },
   // Truth signal for "is the mic hooked to the speakers": presence and
@@ -830,7 +892,14 @@ const Voice = {
     if (!peer) return;
     try { if (peer._off) peer._off(); } catch (e) {}
     try { peer.pc.close(); } catch (e) {}
-    try { if (peer.audioNodes) peer.audioNodes.src.disconnect(); } catch (e) {}
+    try { if (peer.audioNodes && peer.audioNodes.src) peer.audioNodes.src.disconnect(); } catch (e) {}
+    try {
+      if (peer.audioBridge) {
+        peer.audioBridge.pause();
+        peer.audioBridge.srcObject = null;
+        if (peer.audioBridge.parentNode) peer.audioBridge.parentNode.removeChild(peer.audioBridge);
+      }
+    } catch (e) {}
     delete this.peers[uid];
     this._renderPanel();
   },
