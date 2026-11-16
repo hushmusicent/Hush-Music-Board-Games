@@ -1,4 +1,10 @@
 import './index.css';
+import logoImg from './assets/images/hush-music-games-silver-logo.webp';
+import clueBoardImg from './assets/images/clue_mansion_board_1792045386606.jpg';
+import clueSuspectsImg from './assets/images/clue_suspects_art_1792045387596.jpg';
+import clueWeaponsImg from './assets/images/clue_weapons_art_1792045387798.jpg';
+import clueRoomsImg from './assets/images/clue_rooms_art_1792045387232.jpg';
+import clueEnvelopeImg from './assets/images/clue_case_envelope_1792045387836.jpg';
 import { SCRABBLE_WEBSTER_SET, isWebsterScrabbleWord, WEBSTER_EDITION_INFO } from './scrabbleDictionary';
 import { PICTIONARY_LEVELS, getPictionaryLevel, PICTIONARY_WORDS, pickSessionWord, pickPictionaryOptions } from './pictionaryData';
 import { getDeck, DeckEdition, GuessWhoChar, CLASSIC_DECK, MODERN_DECK } from './guessWhoData';
@@ -1701,7 +1707,7 @@ const UI = {
       : '<div style="width:64px;height:64px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:30px;border:2px solid var(--line)">👤</div>';
     const draw = () => {
       v.innerHTML = '<div class="auth-card">'
-        + '<img class="auth-logo" src="/src/assets/images/hush-music-games-silver-logo.webp" alt="Hush Music">'
+        + '<img class="auth-logo" src="' + logoImg + '" alt="Hush Music">'
         + '<h1>Hush Music Board Games</h1>'
         + '<p class="muted" style="margin-top:0">15 Classic Board Games with Points</p>'
         + '<div class="auth-tabs">'
@@ -9989,11 +9995,11 @@ stdInit('jumanji', {
 
 /* ================= OFFICIAL CLUE (Tudor Mansion & Picture Cards) ================= */
 
-const CLUE_BOARD_IMG = '/src/assets/images/clue_mansion_board_1792045386606.jpg';
-const CLUE_SUSPECTS_IMG = '/src/assets/images/clue_suspects_art_1792045387596.jpg';
-const CLUE_WEAPONS_IMG = '/src/assets/images/clue_weapons_art_1792045387798.jpg';
-const CLUE_ROOMS_IMG = '/src/assets/images/clue_rooms_art_1792045387232.jpg';
-const CLUE_ENVELOPE_IMG = '/src/assets/images/clue_case_envelope_1792045387836.jpg';
+const CLUE_BOARD_IMG = clueBoardImg;
+const CLUE_SUSPECTS_IMG = clueSuspectsImg;
+const CLUE_WEAPONS_IMG = clueWeaponsImg;
+const CLUE_ROOMS_IMG = clueRoomsImg;
+const CLUE_ENVELOPE_IMG = clueEnvelopeImg;
 
 const CLUE_SUSPECT_META: Record<string, { color: string; initials: string; avatar: string; bgPos: string }> = {
   'Miss Scarlet': { color: '#ef4444', initials: 'SC', avatar: '💃', bgPos: '8% 8% / 325% 215%' },
