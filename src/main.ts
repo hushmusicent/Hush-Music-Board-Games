@@ -11384,7 +11384,7 @@ stdInit('scrabble', {
   name: 'WordPlay',
   icon: '🔤',
   desc: 'Classic Word Showdown',
-  p: [2, 2],
+  p: [2, 4],
   payout: PAYOUTS.scrabble,
   rules: 'Official 15×15 WordPlay. Tap any square to place your anchor cursor, select direction (↔ Across or ↕ Down), then tap your wooden rack tiles to lay them onto the board. Tiles must connect with existing board letters (first word must cover the ★ center square). Multipliers apply to newly placed tiles: DL (2× letter), TL (3× letter), DW (2× word), TW (3× word). 7 tiles at once awards the +50 Bingo bonus!',
   N: 15,
@@ -12286,15 +12286,17 @@ stdInit('pictionary', {
   name: 'Pictionary',
   icon: '✏️',
   desc: 'Draw & guess',
-  p: [2, 2],
+  p: [2, 4],
   payout: PAYOUTS.pictionary,
   rules: 'Pictionary! 20 Difficulty Levels & 1,000 Pictures including Celebrities! Vs Computer: AI sketches in real-time and you guess from 4 choices (5 rounds — get 3+ to win). With a friend: take turns drawing with your finger while they guess!',
-  newState() {
+  newState(C: any) {
+    const n = (C && C.names && C.names.length) ? C.names.length : 2;
     return {
       turn: 0,
       round: 1,
       score: 0,
-      scores: [0, 0],
+      scores: Array(n).fill(0),
+      totalRounds: n * 2,
       over: false,
       phase: 'draw',
       word: '',
@@ -12420,7 +12422,7 @@ stdInit('pictionary', {
   },
   renderDuel(R: HTMLElement, C: any) {
     const S = C.S, g = this;
-    if (S.round > 4) { if (!S.over) { S.over = true; const w = S.scores[0] === S.scores[1] ? -1 : (S.scores[0] > S.scores[1] ? 0 : 1); C.finish(w, 'Scores: ' + C.seatName(0) + ' ' + S.scores[0] + ' · ' + C.seatName(1) + ' ' + S.scores[1]); } return; }
+    if (S.round > (S.totalRounds || 4)) { if (!S.over) { S.over = true; const best = Math.max.apply(null, S.scores); const wins = S.scores.map((sc: number, i: number) => sc === best ? i : -1).filter((i: number) => i >= 0); const w = wins.length === 1 ? wins[0] : -1; C.finish(w, 'Scores: ' + S.scores.map((sc: number, i: number) => C.seatName(i) + ' ' + sc).join(' · ')); } return; }
     const me = C.isNet ? Net.mySeat() : 0;
     const drawer = S.drawer;
     const iAmDrawer = C.isNet ? me === drawer : true;
@@ -12433,7 +12435,7 @@ stdInit('pictionary', {
       C._drawCover = false;
       if (!C.strokes) C.strokes = [];
       R.innerHTML = turnBanner(C)
-        + '<h2>✏️ Pictionary</h2><div class="turn-banner">Round ' + S.round + '/4 · ' + esc(C.seatName(drawer)) + ' is drawing</div>'
+        + '<h2>✏️ Pictionary</h2><div class="turn-banner">Round ' + S.round + '/' + (S.totalRounds || 4) + ' · ' + esc(C.seatName(drawer)) + ' is drawing</div>'
         + '<div class="card"><h3>' + (iAmDrawer ? 'Your word: <span class="big">' + esc(S.word || '(pick)') + '</span>' : 'Draw in progress…') + '</h3>'
         + '<canvas id="picCv" class="draw" width="400" height="320"></canvas>'
         + (iAmDrawer ? '<div class="row"><button class="btn secondary grow" id="clrBtn">Clear</button><button class="btn grow" id="doneBtn">Done — guesser\'s turn</button></div>' : '<div class="muted">Waiting for the drawing…</div>') + '</div>';
@@ -12467,12 +12469,12 @@ stdInit('pictionary', {
         };
         cv.onpointerup = () => {
           cur = null;
-          if (C.isNet) Net.inboxSend({ to: 1 - me, type: 'strokes', strokes: C.strokes, round: S.round });
+          if (C.isNet) { for (let i = 0; i < C.names.length; i++) { if (i !== me) Net.inboxSend({ to: i, type: 'strokes', strokes: C.strokes, round: S.round }); } }
         };
         cv.onpointercancel = () => { cur = null; };
         $('#clrBtn').onclick = () => { C.strokes = []; drawStrokes(cv, []); };
         $('#doneBtn').onclick = () => {
-          if (C.isNet) Net.inboxSend({ to: 1 - me, type: 'strokes', strokes: C.strokes, round: S.round, final: true });
+          if (C.isNet) { for (let i = 0; i < C.names.length; i++) { if (i !== me) Net.inboxSend({ to: i, type: 'strokes', strokes: C.strokes, round: S.round, final: true }); } }
           C.update((s: any) => { s.phase = 'guess'; s.tleft = 60; });
         };
       }
@@ -12481,12 +12483,13 @@ stdInit('pictionary', {
     if (C.mode === 'hotseat' && !C._guessCover) {
       C._guessCover = true;
       C._drawCover = false;
-      passCover(C, 1 - drawer);
+      passCover(C, (drawer + 1) % C.names.length);
       return;
     }
     C._guessCover = false;
-    const guesser = 1 - drawer;
-    const iAmGuesser = C.isNet ? me === guesser : true;
+    const n = C.names.length;
+    const guesser = (drawer + 1) % n;
+    const iAmGuesser = C.isNet ? me !== drawer : true;
     if (!C._gt) {
       C._gt = 60;
       C._gTimer = setInterval(() => {
@@ -12501,58 +12504,62 @@ stdInit('pictionary', {
       }, 1000);
     }
     R.innerHTML = turnBanner(C)
-      + '<h2>✏️ Pictionary</h2><div class="turn-banner">Round ' + S.round + '/4 · <span id="gTime">60s</span> · ' + esc(C.seatName(guesser)) + ' guessing</div>'
+      + '<h2>✏️ Pictionary</h2><div class="turn-banner">Round ' + S.round + '/' + (S.totalRounds || 4) + ' · <span id="gTime">60s</span> · ' + (C.isNet ? 'Everyone guessing' : esc(C.seatName(guesser)) + ' guessing') + '</div>'
       + '<canvas id="picCv" class="draw" width="400" height="320"></canvas>'
-      + (iAmGuesser ? '<div class="row"><input id="gIn" class="grow" placeholder="Type your guess…" autocomplete="off"><button class="btn small" id="gBtn">Guess</button></div>' : '<div class="muted">Waiting for ' + esc(C.seatName(guesser)) + ' to guess…</div>');
+      + (iAmGuesser ? '<div class="row"><input id="gIn" class="grow" placeholder="Type your guess…" autocomplete="off"><button class="btn small" id="gBtn">Guess</button></div>' : '<div class="muted">Waiting for a guess…</div>');
     drawStrokes($('#picCv') as HTMLCanvasElement, C.strokes);
     if (iAmGuesser) {
       const sub = () => {
         const w = $('#gIn').value.trim().toLowerCase();
         if (!w) return;
         if (C.isNet) Net.inboxSend({ to: drawer, type: 'guess', word: w, round: S.round });
-        else g.duelJudge(C, w);
+        else g.duelJudge(C, w, guesser);
       };
       $('#gBtn').onclick = sub;
       $('#gIn').addEventListener('keydown', (e: KeyboardEvent) => { if (e.key === 'Enter') sub(); });
     }
   },
-  duelJudge(C: any, w: string) {
+  duelJudge(C: any, w: string, guesserSeat?: number) {
     const S = C.S, g = this;
     const target = (S.word || '').trim().toLowerCase();
     const guess = w.trim().toLowerCase();
     const ok = guess === target || (guess.length >= 4 && target.includes(guess));
-    if (ok) g.duelNext(C, true);
+    if (ok) g.duelNext(C, true, guesserSeat);
     else toast('❌ Nope!');
   },
-  duelNext(C: any, ok: boolean) {
+  duelNext(C: any, ok: boolean, guesserSeat?: number) {
     const S = C.S;
     if (S.phase !== 'guess') return;
-    const drawer = S.drawer, guesser = 1 - drawer;
+    const drawer = S.drawer, n = C.names.length;
+    const guesser = (typeof guesserSeat === 'number') ? guesserSeat : ((drawer + 1) % n);
     if (C._gTimer) { clearInterval(C._gTimer); C._gTimer = null; }
     C._gt = null;
     if (ok) {
+      S.phase = 'scored';
       S.scores[drawer]++;
-      S.scores[guesser]++;
+      if (guesser >= 0 && guesser < n) S.scores[guesser]++;
       Sound.win();
-      toast('✅ "' + S.word + '"! Both score!');
+      toast('✅ "' + S.word + '"! ' + C.seatName(drawer) + ' + ' + C.seatName(guesser) + ' score!');
     } else {
       Sound.lose();
       toast('⏰ Time! It was "' + S.word + '"');
     }
     cpuDelay(() => {
       S.round++;
-      S.drawer = 1 - S.drawer;
+      S.drawer = (S.drawer + 1) % n;
       S.phase = 'draw';
       S.word = '';
       C.strokes = [];
       C._pv = null;
       C._drawCover = false;
       C._guessCover = false;
-      if (S.round > 4) {
+      if (S.round > (S.totalRounds || 4)) {
         S.over = true;
         C.update(() => {});
-        const w = S.scores[0] === S.scores[1] ? -1 : (S.scores[0] > S.scores[1] ? 0 : 1);
-        C.finish(w, 'Scores: ' + C.seatName(0) + ' ' + S.scores[0] + ' · ' + C.seatName(1) + ' ' + S.scores[1]);
+        const best = Math.max.apply(null, S.scores);
+        const wins = S.scores.map((sc: number, i: number) => sc === best ? i : -1).filter((i: number) => i >= 0);
+        const w = wins.length === 1 ? wins[0] : -1;
+        C.finish(w, 'Scores: ' + S.scores.map((sc: number, i: number) => C.seatName(i) + ' ' + sc).join(' · '));
       } else C.update(() => {});
     }, 1400);
   },
@@ -12568,9 +12575,10 @@ stdInit('pictionary', {
       } else C.rerender();
     }
     if (msg.type === 'guess') {
+      if (S.phase !== 'guess') return;
       const ok = msg.word === S.word;
       Net.inboxSend({ to: msg.from, type: 'verdict', ok });
-      if (ok) g.duelNext(C, true);
+      if (ok) g.duelNext(C, true, msg.from);
     }
     if (msg.type === 'verdict') {
       if (!msg.ok) toast('❌ Nope!');
