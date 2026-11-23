@@ -1,5 +1,5 @@
 import './index.css';
-import logoImg from './assets/images/hush-music-games-silver-logo.webp';
+import logoImg from './assets/images/hush-music-games-silver-logo.webp?inline';
 import clueBoardImg from './assets/images/clue_mansion_board_1792045386606.jpg?inline';
 import clueSuspectsImg from './assets/images/clue_suspects_art_1792045387596.jpg?inline';
 import clueWeaponsImg from './assets/images/clue_weapons_art_1792045387798.jpg?inline';
