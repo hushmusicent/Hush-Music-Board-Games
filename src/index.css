@@ -66,6 +66,15 @@ table.lb tr.me td{color:var(--gold); font-weight:800;}
 .rack{display:flex; gap:6px; justify-content:center; margin:10px 0; flex-wrap:wrap;}
 .die{font-size:40px; background:#fff; border-radius:10px; width:56px; height:56px; display:inline-flex; align-items:center; justify-content:center; margin:2px;}
 canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
+.pic-tools{display:flex; flex-direction:column; gap:8px; margin-top:8px;}
+.pic-colors{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+.pic-color{width:30px; height:30px; border-radius:50%; border:2px solid rgba(255,255,255,0.6); cursor:pointer; padding:0; flex-shrink:0;}
+.pic-color.sel{border-color:#facc15; box-shadow:0 0 0 2px #facc15, 0 0 10px rgba(250,204,21,0.7); transform:scale(1.15);}
+.pic-sizes{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+.pic-size{width:34px; height:34px; border-radius:8px; border:2px solid rgba(255,255,255,0.25); background:rgba(255,255,255,0.08); color:#fff; cursor:pointer; font-size:11px; line-height:1;}
+.pic-size.sel{border-color:#facc15; background:rgba(250,204,21,0.2);}
+.pic-eraser{border-radius:8px; border:2px solid rgba(255,255,255,0.25); background:rgba(255,255,255,0.08); color:#fff; cursor:pointer; font-size:12px; font-weight:700; padding:6px 10px;}
+.pic-eraser.sel{border-color:#facc15; background:rgba(250,204,21,0.2);}
 .qbtn{background:var(--card2); border:1px solid var(--line); color:var(--text); border-radius:10px; padding:10px; margin:4px; cursor:pointer; font-size:14px;}
 .qbtn.sel{border-color:var(--gold); color:var(--gold2);}
 .pawnbar{display:flex; gap:6px; flex-wrap:wrap; margin:6px 0;}
@@ -1406,16 +1415,15 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
 .gethome-pawn-group.movable {
   cursor: pointer;
   filter: drop-shadow(0 0 8px #facc15);
-  animation: gethomePawnBob 1.1s ease-in-out infinite alternate;
 }
 
-@keyframes gethomePawnBob {
-  0% { transform: translateY(0) scale(1); }
-  100% { transform: translateY(-3.5px) scale(1.15); }
+/* Picked-up pawn: static lift + gold ring. No bobbing/floating animation. */
+.gethome-pawn-group.selected {
+  transform: translateY(-4px) scale(1.12);
+  filter: drop-shadow(0 0 12px #22c55e) drop-shadow(0 0 4px #ffffff);
 }
 
 .gethome-pawn-group.movable:hover {
-  transform: translateY(-5px) scale(1.22) !important;
   filter: drop-shadow(0 0 12px #ffffff);
 }
 
@@ -1913,12 +1921,12 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
 .mybad-pawn-group.target {
   cursor: pointer;
   filter: drop-shadow(0 0 8px #ef4444);
-  animation: mybadPawnPulse 1.2s infinite alternate ease-in-out;
 }
 
-@keyframes mybadPawnPulse {
-  0% { transform: scale(1); filter: drop-shadow(0 0 4px #ef4444); }
-  100% { transform: scale(1.15) translateY(-2px); filter: drop-shadow(0 0 10px #ef4444); }
+/* Picked-up pawn: static lift + green ring. No pulsing/floating. */
+.mybad-pawn-group.selected {
+  transform: translateY(-4px) scale(1.1);
+  filter: drop-shadow(0 0 10px #10b981) drop-shadow(0 0 4px #ffffff);
 }
 
 @keyframes mybadPulseRing {
@@ -1937,7 +1945,7 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
 }
 
 .mybad-pulse-ring {
-  animation: mybadPulseRing 1.4s infinite ease-in-out;
+  /* Static dashed ring — no pulsing/floating animation. */
 }
 
 /* ================= ENTERPRISE (GLOBAL MONOPOLY) ================= */
@@ -2650,17 +2658,19 @@ canvas.draw{background:#fff; border-radius:12px; width:100%; touch-action:none;}
 }
 
 .payday-pawn-piece {
-  width: clamp(10px, 2vw, 15px);
-  height: clamp(10px, 2vw, 15px);
+  width: clamp(20px, 4.5vw, 28px);
+  height: clamp(20px, 4.5vw, 28px);
   border-radius: 50%;
-  border: 1.5px solid #ffffff;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  border: 2.5px solid #ffffff;
+  outline: 2px solid rgba(0,0,0,0.85);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.75);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 8px;
+  font-size: 13px;
   font-weight: 900;
   color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9);
   flex-shrink: 0;
   animation: pawnBounce 0.3s ease-out;
 }

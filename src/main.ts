@@ -1,10 +1,10 @@
 import './index.css';
 import logoImg from './assets/images/hush-music-games-silver-logo.webp';
-import clueBoardImg from './assets/images/clue_mansion_board_1792045386606.jpg';
-import clueSuspectsImg from './assets/images/clue_suspects_art_1792045387596.jpg';
-import clueWeaponsImg from './assets/images/clue_weapons_art_1792045387798.jpg';
-import clueRoomsImg from './assets/images/clue_rooms_art_1792045387232.jpg';
-import clueEnvelopeImg from './assets/images/clue_case_envelope_1792045387836.jpg';
+import clueBoardImg from './assets/images/clue_mansion_board_1792045386606.jpg?inline';
+import clueSuspectsImg from './assets/images/clue_suspects_art_1792045387596.jpg?inline';
+import clueWeaponsImg from './assets/images/clue_weapons_art_1792045387798.jpg?inline';
+import clueRoomsImg from './assets/images/clue_rooms_art_1792045387232.jpg?inline';
+import clueEnvelopeImg from './assets/images/clue_case_envelope_1792045387836.jpg?inline';
 import { SCRABBLE_WEBSTER_SET, isWebsterScrabbleWord, WEBSTER_EDITION_INFO } from './scrabbleDictionary';
 import { PICTIONARY_LEVELS, getPictionaryLevel, PICTIONARY_WORDS, pickSessionWord, pickPictionaryOptions } from './pictionaryData';
 import { getDeck, DeckEdition, GuessWhoChar, CLASSIC_DECK, MODERN_DECK } from './guessWhoData';
@@ -1315,6 +1315,24 @@ const UI = {
       `;
     }
 
+    let enterpriseLengthCard = '';
+    if (this.curGame === 'monopoly') {
+      const curLen = +(localStorage.getItem('enterprise_length') || '0'); // 0 = till bankrupt
+      const lenLabel = curLen === 0 ? 'Till Bankrupt' : curLen + ' Rounds';
+      enterpriseLengthCard = `
+        <div class="card" style="border: 2px solid #d4af37; margin-bottom: 12px; padding: 12px;">
+          <div style="font-weight:900; color:#fbbf24; font-size:12.5px; margin-bottom:4px;">🌐 GAME LENGTH</div>
+          <div class="muted" style="font-size:11px; margin-bottom:8px;">How long should the game last? Richest tycoon wins when the rounds run out — or keep playing till everyone else is bankrupt.</div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn small ${curLen === 25 ? '' : 'secondary'}" data-pick-ent-len="25">25 Rounds</button>
+            <button class="btn small ${curLen === 50 ? '' : 'secondary'}" data-pick-ent-len="50">50 Rounds</button>
+            <button class="btn small ${curLen === 0 ? '' : 'secondary'}" data-pick-ent-len="0">Till Bankrupt</button>
+          </div>
+          <div style="font-size:11px; color:#94a3b8; margin-top:6px;">Selected: <b style="color:#fff">${lenLabel}</b></div>
+        </div>
+      `;
+    }
+
     let pictionaryLevelCard = '';
     if (this.curGame === 'pictionary') {
       const curPicLvl = Math.max(1, Math.min(20, +(localStorage.getItem('pictionary_level') || '1')));
@@ -1373,6 +1391,7 @@ const UI = {
       + '</div>'
       + scrabbleChampCard
       + pictionaryLevelCard
+      + enterpriseLengthCard
       + '<div class="card"><h3>How do you want to play?</h3>'
       + '<button class="btn" data-m="pvc">' + pvcLabel + '</button>'
       + '<button class="btn secondary" data-m="hotseat">👥 Pass &amp; Play (' + pmin + '–' + pmax + ' players, one phone)</button>'
@@ -1405,6 +1424,14 @@ const UI = {
         Sound.click();
         const lv = +btn.dataset.pickPicLv;
         localStorage.setItem('pictionary_level', String(lv));
+        this.gameMode(v);
+      };
+    });
+    v.querySelectorAll('[data-pick-ent-len]').forEach((btn: any) => {
+      btn.onclick = () => {
+        Sound.click();
+        const len = +btn.dataset.pickEntLen;
+        localStorage.setItem('enterprise_length', String(len));
         this.gameMode(v);
       };
     });
@@ -2566,7 +2593,7 @@ function turnBanner(C: any) {
     + (t ? '<div class="turn-banner">' + t + '</div>' : '');
 }
 function cpuDelay(fn: () => void, ms?: number) {
-  setTimeout(fn, ms || 700);
+  setTimeout(fn, ms || 1500);
 }
 
 function startGame(gameId: string, mode: string, extra?: any) {
@@ -4602,8 +4629,9 @@ stdInit('trouble', {
       pw.forEach((p: number, k: number) => {
         const pt = g.getPawnCoords(pi, k, p, totalPlayers);
         const isMovable = curPlayer === pi && C.mine() && S.rolled && !S.over && validMoves.includes(k);
+        const isPickedUp = isMovable && S.sel === k;
         pawnsSvg += `
-          <g class="gethome-pawn-group ${isMovable ? 'movable' : ''}" data-pi="${pi}" data-k="${k}" style="cursor:${isMovable ? 'pointer' : 'default'};">
+          <g class="gethome-pawn-group ${isMovable ? 'movable' : ''} ${isPickedUp ? 'selected' : ''}" data-pi="${pi}" data-k="${k}" style="cursor:${isMovable ? 'pointer' : 'default'};">
             <!-- Pawn shadow in socket -->
             <ellipse cx="${pt.x + 0.5}" cy="${pt.y + 4}" rx="8" ry="4" fill="rgba(0,0,0,0.5)" />
             <!-- Plastic base collar -->
@@ -4843,25 +4871,21 @@ stdInit('trouble', {
     const passBtn = $('#passBtn');
     if (passBtn) passBtn.onclick = () => g.endTurn(C);
 
-    // Attach Pawn Click Handlers
+    // Attach Pawn Click Handlers — tap-tap: first tap picks the pawn up
+    // (selected, target space highlighted), second tap on the same pawn
+    // or a tap on the highlighted space moves it. No floating/drag.
     R.querySelectorAll('.gethome-pawn-group.movable').forEach((el: any) => {
       const pi = +el.dataset.pi;
       const k = +el.dataset.k;
       el.onclick = (e: MouseEvent) => {
         e.stopPropagation();
         if (pi === curPlayer && C.mine() && S.rolled && !S.over) {
-          g.movePawn(C, k);
-        }
-      };
-      // Hover highlight target
-      el.onmouseenter = () => {
-        S.sel = k;
-        C.update(() => {}, true);
-      };
-      el.onmouseleave = () => {
-        if (S.sel === k) {
-          S.sel = -1;
-          C.update(() => {}, true);
+          if (S.sel === k) {
+            g.movePawn(C, k);
+          } else {
+            S.sel = k;
+            C.update(() => {}, true);
+          }
         }
       };
     });
@@ -4901,10 +4925,10 @@ stdInit('trouble', {
         S.log = `🎲 ${pName} popped a ${roll} — no valid moves! Turn passes.`;
         toast(`Popped a ${roll} — no valid moves!`);
         C.update(() => {});
-        // Auto pass after short pause
+        // Auto pass after a readable pause so the player can see the roll
         setTimeout(() => {
           if (S.mustPass && !S.over) g.endTurn(C);
-        }, 900);
+        }, 1800);
       } else {
         S.mustPass = false;
         if (roll === 6) {
@@ -4915,10 +4939,10 @@ stdInit('trouble', {
           S.bonusPop = false;
           S.log = `🎲 ${pName} popped a ${roll}! Tap a highlighted pawn to advance.`;
         }
-        // If only 1 valid move exists in single-player or CPU, can select it
-        if (valid.length === 1) {
-          S.sel = valid[0];
-        }
+        // Tap-tap: nothing is pre-selected. The player taps a pawn to pick
+        // it up (which highlights where it will land), then taps it again
+        // or taps the highlighted space to move it.
+        S.sel = -1;
         C.update(() => {});
         maybeCpu(C);
       }
@@ -5788,7 +5812,7 @@ stdInit('sorry', {
         const isSelected = S.selPawn === k && isCurrentPlayer;
 
         svg += `
-          <g class="mybad-pawn-group ${isMovable ? 'movable' : ''} ${isTarget ? 'target' : ''}" data-pi="${pi}" data-k="${k}">
+          <g class="mybad-pawn-group ${isMovable ? 'movable' : ''} ${isTarget ? 'target' : ''} ${isSelected ? 'selected' : ''}" data-pi="${pi}" data-k="${k}">
             <!-- Contact shadow -->
             <ellipse cx="${pt.x + 0.8}" cy="${pt.y + 6.5}" rx="8.5" ry="4" fill="rgba(0,0,0,0.3)" />
             <!-- Flared conical base with lip -->
@@ -6018,7 +6042,9 @@ stdInit('sorry', {
 
       if (!isMyTurn || S.card == null) return;
 
-      // Case A: Clicking own movable pawn
+      // Case A: Clicking own movable pawn — tap-tap. First tap picks the
+      // pawn up (selected, highlighted); second tap on the same pawn
+      // moves it. No floating/drag.
       if (pi === curPlayer && movablePawnIndices.includes(k)) {
         el.onclick = () => {
           // If this card is Card 11 swap or MYBAD, we need target opponent!
@@ -6026,17 +6052,20 @@ stdInit('sorry', {
           const pawnMoves = filteredMoves.filter((m: any) => m.k === k);
           if (pawnMoves.length === 0) return;
 
-          if (pawnMoves.length === 1 && !pawnMoves[0].targetPi) {
-            // Unambiguous direct move!
-            g.executeMove(C, pawnMoves[0]);
-          } else if (pawnMoves.some((m: any) => m.type === 'swap' || m.type === 'mybad')) {
+          if (pawnMoves.some((m: any) => m.type === 'swap' || m.type === 'mybad')) {
             // Select pawn k and prompt to click target opponent
             S.selPawn = k;
             toast('Now tap the opponent pawn you want to target!');
             C.update(() => {});
-          } else {
-            // First valid move
+            return;
+          }
+          if (S.selPawn === k) {
+            // Second tap on the picked-up pawn: move it.
             g.executeMove(C, pawnMoves[0]);
+          } else {
+            // First tap: pick it up so the player sees it is selected.
+            S.selPawn = k;
+            C.update(() => {});
           }
         };
       }
@@ -6313,6 +6342,7 @@ stdInit('monopoly', {
       inJail: C.names.map(() => false),
       jailTurns: C.names.map(() => 0),
       round: 1,
+      gameLength: (() => { const v = +(localStorage.getItem('enterprise_length') || '0'); return (v === 25 || v === 50) ? v : 0; })(), // 0 = till bankrupt (default)
       over: false,
       d1: 0,
       d2: 0,
@@ -6370,7 +6400,7 @@ stdInit('monopoly', {
     let h = '<div class="enterprise-wrap">';
     h += turnBanner(C);
     h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">';
-    h += '<h2 style="margin:0">🌐 Enterprise <span class="muted" style="font-size:13px">round ' + S.round + '/25</span></h2>';
+    h += '<h2 style="margin:0">🌐 Enterprise <span class="muted" style="font-size:13px">round ' + S.round + (S.gameLength ? '/' + S.gameLength : ' · till bankrupt') + '</span></h2>';
     h += '<button class="btn secondary small" id="viewAllDeedsBtn" style="font-size:11px;padding:4px 10px">📋 Property Deeds (' + g.PURCHASABLE.length + ')</button>';
     h += '</div>';
 
@@ -6485,11 +6515,9 @@ stdInit('monopoly', {
       h += '<div style="font-weight:800;font-size:12px;color:' + (isRiches ? '#6ee7b7' : '#fdba74') + '">' + (isRiches ? '💎 WORLD RICHES (1 Card)' : '⚡ RISKS (1 Card)') + '</div>';
       h += '<div style="font-weight:700;font-size:11px;margin:3px 0;color:#fff">' + esc(S.activeCard.title) + '</div>';
       h += '<div style="font-size:9.5px;color:#d1d5db;margin-bottom:6px;line-height:1.3">' + esc(S.activeCard.desc) + '</div>';
-      if (isHumanTurn || S.over) {
-        h += '<button class="btn small" id="dismissCardBtn" style="padding:4px 14px;font-size:10.5px">Continue</button>';
-      } else {
-        h += '<div class="muted" style="font-size:9px">Advancing...</div>';
-      }
+      // The card stays until someone taps Continue, so the player can
+      // actually read it — even when the computer drew it.
+      h += '<button class="btn small" id="dismissCardBtn" style="padding:4px 14px;font-size:10.5px">Continue</button>';
       h += '</div>';
     }
 
@@ -6873,98 +6901,112 @@ stdInit('monopoly', {
       S.doublesStreak = 0;
     }
 
-    // Move forward
+    // Move forward — step the piece space by space so the player can
+    // follow it around the board (was an instant teleport).
     let np = S.pos[cur] + sum;
     if (np >= g.SPACES.length) {
       S.cash[cur] += 200;
       S.msg = esc(C.seatName(cur)) + ' completed global circuit! Passed GO +$200 enterprise capital.';
     }
     np %= g.SPACES.length;
-    S.pos[cur] = np;
+    const startPos = S.pos[cur];
+    const totalSteps = (np - startPos + g.SPACES.length) % g.SPACES.length;
+    const landed = () => {
+      const sp = g.SPACES[np];
 
-    const sp = g.SPACES[np];
-
-    // Landed space interactions
-    if (sp.t === 'prop' || sp.t === 'transit' || sp.t === 'util') {
-      const o = S.owner[np];
-      if (o == null) {
-        if (cur === 0 ? C.mine() : true) {
-          S.pendingBuy = np;
-          S.msg = (cur === 0 ? 'Landed on unowned ' : esc(C.seatName(cur)) + ' landed on unowned ') + sp.n + ' ($' + sp.price + ')';
-          C.update(() => {});
-          maybeCpu(C);
-          return;
+      // Landed space interactions
+      if (sp.t === 'prop' || sp.t === 'transit' || sp.t === 'util') {
+        const o = S.owner[np];
+        if (o == null) {
+          if (cur === 0 ? C.mine() : true) {
+            S.pendingBuy = np;
+            S.msg = (cur === 0 ? 'Landed on unowned ' : esc(C.seatName(cur)) + ' landed on unowned ') + sp.n + ' ($' + sp.price + ')';
+            C.update(() => {});
+            maybeCpu(C);
+            return;
+          } else {
+            S.msg = 'Nobody acquired ' + sp.n;
+          }
+        } else if (o !== cur) {
+          const rent = g.calcRent(S, np);
+          S.cash[cur] -= rent;
+          S.cash[o] += rent;
+          S.msg = esc(C.seatName(cur)) + ' paid $' + rent + ' revenue to ' + esc(C.seatName(o)) + ' for ' + sp.n;
+          Sound.click();
         } else {
-          S.msg = 'Nobody acquired ' + sp.n;
+          S.msg = 'Visited your territory: ' + sp.n;
         }
-      } else if (o !== cur) {
-        const rent = g.calcRent(S, np);
-        S.cash[cur] -= rent;
-        S.cash[o] += rent;
-        S.msg = esc(C.seatName(cur)) + ' paid $' + rent + ' revenue to ' + esc(C.seatName(o)) + ' for ' + sp.n;
-        Sound.click();
-      } else {
-        S.msg = 'Visited your territory: ' + sp.n;
+      } else if (sp.t === 'tax') {
+        S.cash[cur] -= sp.amt;
+        S.msg = 'Paid $' + sp.amt + ' for ' + sp.n;
+        Sound.lose();
+      } else if (sp.t === 'risks') {
+        // Landed on Risks: Player gets to pick 1 card
+        S.pendingCardPick = 'risks';
+        S.cardPicked = false;
+        S.msg = '⚡ Landed on RISKS! Pick 1 card from the deck.';
+        Sound.card();
+        C.update(() => {});
+        maybeCpu(C);
+        return;
+      } else if (sp.t === 'riches') {
+        // Landed on World Riches: Player gets to pick 1 card
+        S.pendingCardPick = 'riches';
+        S.cardPicked = false;
+        S.msg = '💎 Landed on WORLD RICHES! Pick 1 card from the deck.';
+        Sound.card();
+        C.update(() => {});
+        maybeCpu(C);
+        return;
+      } else if (sp.t === 'gotojail') {
+        S.pos[cur] = 10;
+        S.inJail[cur] = true;
+        S.isDouble = false;
+        S.msg = '🚨 Extradited to Custody! Miss upcoming turns or pay bail.';
+        Sound.lose();
+      } else if (sp.t === 'parking') {
+        S.msg = '🌐 Global Summit safe haven: Take a strategic rest.';
+      } else if (sp.t === 'jail') {
+        S.msg = 'Visiting Custody facilities.';
+      } else if (sp.t === 'go') {
+        S.msg = '🏁 Landed directly on GO! +$200 enterprise capital.';
       }
-    } else if (sp.t === 'tax') {
-      S.cash[cur] -= sp.amt;
-      S.msg = 'Paid $' + sp.amt + ' for ' + sp.n;
-      Sound.lose();
-    } else if (sp.t === 'risks') {
-      // Landed on Risks: Player gets to pick 1 card
-      S.pendingCardPick = 'risks';
-      S.cardPicked = false;
-      S.msg = '⚡ Landed on RISKS! Pick 1 card from the deck.';
-      Sound.card();
+
+      // Check bankruptcy
+      if (S.cash[cur] < 0) {
+        S.alive[cur] = false;
+        for (const k in S.owner) if (S.owner[k] === cur) delete S.owner[k];
+        for (const k in S.hq) if (S.owner[k] === cur) delete S.hq[k];
+        S.msg = '💸 ' + esc(C.seatName(cur)) + ' went BANKRUPT!';
+        Sound.lose();
+      }
+
       C.update(() => {});
-      maybeCpu(C);
-      return;
-    } else if (sp.t === 'riches') {
-      // Landed on World Riches: Player gets to pick 1 card
-      S.pendingCardPick = 'riches';
-      S.cardPicked = false;
-      S.msg = '💎 Landed on WORLD RICHES! Pick 1 card from the deck.';
-      Sound.card();
-      C.update(() => {});
-      maybeCpu(C);
-      return;
-    } else if (sp.t === 'gotojail') {
-      S.pos[cur] = 10;
-      S.inJail[cur] = true;
-      S.isDouble = false;
-      S.msg = '🚨 Extradited to Custody! Miss upcoming turns or pay bail.';
-      Sound.lose();
-    } else if (sp.t === 'parking') {
-      S.msg = '🌐 Global Summit safe haven: Take a strategic rest.';
-    } else if (sp.t === 'jail') {
-      S.msg = 'Visiting Custody facilities.';
-    } else if (sp.t === 'go') {
-      S.msg = '🏁 Landed directly on GO! +$200 enterprise capital.';
-    }
+      g.checkEnd(C);
 
-    // Check bankruptcy
-    if (S.cash[cur] < 0) {
-      S.alive[cur] = false;
-      for (const k in S.owner) if (S.owner[k] === cur) delete S.owner[k];
-      for (const k in S.hq) if (S.owner[k] === cur) delete S.hq[k];
-      S.msg = '💸 ' + esc(C.seatName(cur)) + ' went BANKRUPT!';
-      Sound.lose();
-    }
-
-    C.update(() => {});
-    g.checkEnd(C);
-
-    if (!S.over) {
-      if (S.pendingBuy < 0) {
-        if (!S.isDouble || S.inJail[cur] || !S.alive[cur]) {
-          g.nextTurn(C);
-        } else {
-          S.msg = (S.msg ? S.msg + ' · ' : '') + '🎲 Doubles! Roll again!';
-          C.update(() => {});
+      if (!S.over) {
+        if (S.pendingBuy < 0) {
+          if (!S.isDouble || S.inJail[cur] || !S.alive[cur]) {
+            g.nextTurn(C);
+          } else {
+            S.msg = (S.msg ? S.msg + ' · ' : '') + '🎲 Doubles! Roll again!';
+            C.update(() => {});
+          }
         }
       }
-    }
-    maybeCpu(C);
+      maybeCpu(C);
+    };
+    if (totalSteps <= 0) { landed(); return; }
+    let stepped = 0;
+    const stepFn = () => {
+      stepped++;
+      S.pos[cur] = (startPos + stepped) % g.SPACES.length;
+      C.update(() => {});
+      if (stepped < totalSteps) setTimeout(stepFn, 280);
+      else landed();
+    };
+    setTimeout(stepFn, 280);
+
   },
   doPickCard(C: any, type: 'risks' | 'riches') {
     const S = C.S, g = this;
@@ -7107,7 +7149,8 @@ stdInit('monopoly', {
       C.finish(alive[0], 'Won Enterprise! Global Net Worth $' + g.netWorth(S, alive[0]));
       return;
     }
-    if (S.round > 25) {
+    const limit = S.gameLength || 0;
+    if (limit > 0 && S.round > limit) {
       S.over = true;
       let w = 0, bw = -1;
       alive.forEach((i: number) => {
@@ -7115,7 +7158,7 @@ stdInit('monopoly', {
         if (wv > bw) { bw = wv; w = i; }
       });
       C.update(() => {});
-      C.finish(w, 'Richest Tycoon after 25 rounds: $' + bw);
+      C.finish(w, 'Richest Tycoon after ' + limit + ' rounds: $' + bw);
     }
   },
   cpu(C: any) {
@@ -7127,9 +7170,10 @@ stdInit('monopoly', {
       return;
     }
 
-    // If CPU drew a card and it is displayed
+    // If a card is displayed, wait for the human to read it and tap
+    // Continue. Do NOT auto-dismiss — the card used to vanish before
+    // anyone could read it.
     if (S.activeCard) {
-      g.doDismissCard(C);
       return;
     }
 
@@ -8822,7 +8866,8 @@ stdInit('life', {
     C.update(() => {});
 
     setTimeout(() => {
-      S.spinning = false;
+      // Keep S.spinning true while the car steps to the target space so the
+      // player can't re-spin mid-move; cleared when the move completes.
       const curPos = S.pos[cur];
       const isCol = S.pathType[cur] === 'college';
       let targetPos = curPos + spin;
@@ -8863,8 +8908,25 @@ stdInit('life', {
         }
       }
 
-      S.pos[cur] = targetPos;
-      g.handleLandedSpace(C, targetPos);
+      // Step the car space by space so the player can follow it
+      // (was an instant teleport to the target space).
+      const startPos = curPos;
+      const totalSteps = Math.max(0, targetPos - startPos);
+      if (totalSteps <= 0) {
+        S.spinning = false;
+        S.pos[cur] = targetPos;
+        g.handleLandedSpace(C, targetPos);
+        return;
+      }
+      let stepped = 0;
+      const stepFn = () => {
+        stepped++;
+        S.pos[cur] = startPos + stepped;
+        C.update(() => {});
+        if (stepped < totalSteps) setTimeout(stepFn, 300);
+        else { S.spinning = false; g.handleLandedSpace(C, targetPos); }
+      };
+      setTimeout(stepFn, 300);
     }, 800);
   },
   handleLandedSpace(C: any, spaceId: number) {
@@ -12266,14 +12328,20 @@ function drawStrokes(cv: HTMLCanvasElement, strokes: any[], n?: number) {
   const W = cv.width, H = cv.height;
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, W, H);
-  ctx.lineWidth = 4;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = '#0f172a';
   const count = n == null ? strokes.length : Math.max(0, Math.min(n, strokes.length));
   strokes.slice(0, count).forEach(st => {
+    // Stroke can be a plain point array (old / AI sketches) or an object
+    // { c: color, w: width, pts: [[x,y],...] } from the drawing tools.
+    const pts = Array.isArray(st) ? st : (st.pts || []);
+    const color = Array.isArray(st) ? '#0f172a' : (st.c || '#0f172a');
+    const width = Array.isArray(st) ? 5 : (st.w || 5);
+    if (!pts.length) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
     ctx.beginPath();
-    st.forEach((p: number[], i: number) => {
+    pts.forEach((p: number[], i: number) => {
       const x = p[0] / 100 * W, y = p[1] / 100 * H;
       if (i) ctx.lineTo(x, y);
       else ctx.moveTo(x, y);
@@ -12438,7 +12506,15 @@ stdInit('pictionary', {
         + '<h2>✏️ Pictionary</h2><div class="turn-banner">Round ' + S.round + '/' + (S.totalRounds || 4) + ' · ' + esc(C.seatName(drawer)) + ' is drawing</div>'
         + '<div class="card"><h3>' + (iAmDrawer ? 'Your word: <span class="big">' + esc(S.word || '(pick)') + '</span>' : 'Draw in progress…') + '</h3>'
         + '<canvas id="picCv" class="draw" width="400" height="320"></canvas>'
-        + (iAmDrawer ? '<div class="row"><button class="btn secondary grow" id="clrBtn">Clear</button><button class="btn grow" id="doneBtn">Done — guesser\'s turn</button></div>' : '<div class="muted">Waiting for the drawing…</div>') + '</div>';
+        + (iAmDrawer ? '<div class="pic-tools">'
+          + '<div class="pic-colors">' + ['#0f172a', '#dc2626', '#2563eb', '#16a34a', '#ea580c', '#7c3aed', '#92400e', '#db2777'].map((c: string) => '<button class="pic-color' + ((C._drawColor || '#0f172a') === c && !C._erasing ? ' sel' : '') + '" data-pic-color="' + c + '" style="background:' + c + '" title="' + c + '"></button>').join('') + '</div>'
+          + '<div class="pic-sizes">'
+          + '<button class="pic-size' + ((C._drawWidth || 6) === 3 ? ' sel' : '') + '" data-pic-size="3" title="Thin">●</button>'
+          + '<button class="pic-size' + ((C._drawWidth || 6) === 6 ? ' sel' : '') + '" data-pic-size="6" title="Medium" style="font-size:16px">●</button>'
+          + '<button class="pic-size' + ((C._drawWidth || 6) === 10 ? ' sel' : '') + '" data-pic-size="10" title="Thick" style="font-size:21px">●</button>'
+          + '<button class="pic-eraser' + (C._erasing ? ' sel' : '') + '" id="eraserBtn" title="Eraser">🧽 Eraser</button>'
+          + '</div>'
+          + '<div class="row"><button class="btn secondary grow" id="clrBtn">Clear</button><button class="btn grow" id="doneBtn">Done — guesser\'s turn</button></div></div>' : '<div class="muted">Waiting for the drawing…</div>') + '</div>';
       const cv = $('#picCv') as HTMLCanvasElement;
       drawStrokes(cv, C.strokes);
       if (iAmDrawer) {
@@ -12449,6 +12525,8 @@ stdInit('pictionary', {
           S.word = pick.w;
           C.update(() => {}, true);
         }
+        if (!C._drawColor) C._drawColor = '#0f172a';
+        if (!C._drawWidth) C._drawWidth = 6;
         let cur: any = null;
         const pos = (e: any) => {
           const r = cv.getBoundingClientRect();
@@ -12457,13 +12535,15 @@ stdInit('pictionary', {
         };
         cv.onpointerdown = (e: any) => {
           e.preventDefault();
-          cur = [pos(e)];
+          const col = C._erasing ? '#ffffff' : C._drawColor;
+          const w = C._erasing ? 14 : C._drawWidth;
+          cur = { c: col, w, pts: [pos(e)] };
           C.strokes.push(cur);
           cv.setPointerCapture(e.pointerId);
         };
         cv.onpointermove = (e: any) => {
           if (cur) {
-            cur.push(pos(e));
+            cur.pts.push(pos(e));
             drawStrokes(cv, C.strokes);
           }
         };
@@ -12472,6 +12552,21 @@ stdInit('pictionary', {
           if (C.isNet) { for (let i = 0; i < C.names.length; i++) { if (i !== me) Net.inboxSend({ to: i, type: 'strokes', strokes: C.strokes, round: S.round }); } }
         };
         cv.onpointercancel = () => { cur = null; };
+        R.querySelectorAll('[data-pic-color]').forEach((b: any) => b.onclick = () => {
+          C._drawColor = b.dataset.picColor; C._erasing = false;
+          R.querySelectorAll('.pic-color').forEach((x: any) => x.classList.toggle('sel', x === b));
+          const er = $('#eraserBtn'); if (er) er.classList.remove('sel');
+        });
+        R.querySelectorAll('[data-pic-size]').forEach((b: any) => b.onclick = () => {
+          C._drawWidth = +b.dataset.picSize;
+          R.querySelectorAll('.pic-size').forEach((x: any) => x.classList.toggle('sel', x === b));
+        });
+        const eraserBtn = $('#eraserBtn');
+        if (eraserBtn) eraserBtn.onclick = () => {
+          C._erasing = !C._erasing;
+          eraserBtn.classList.toggle('sel', !!C._erasing);
+          R.querySelectorAll('.pic-color').forEach((x: any) => x.classList.toggle('sel', false));
+        };
         $('#clrBtn').onclick = () => { C.strokes = []; drawStrokes(cv, []); };
         $('#doneBtn').onclick = () => {
           if (C.isNet) { for (let i = 0; i < C.names.length; i++) { if (i !== me) Net.inboxSend({ to: i, type: 'strokes', strokes: C.strokes, round: S.round, final: true }); } }
